@@ -23,6 +23,11 @@ I build modern, performant web experiences and AI-powered tools that solve real 
 |---------|-------------|
 | [ClawBox](https://github.com/ID-Robots/clawbox) | Private AI assistant on NVIDIA Jetson — setup wizard, dashboard & 580+ skills |
 
+## Beyond Code
+
+- Lead guitarist for **Slathe**
+- Calisthenics enthusiast
+
 ## Let's Connect
 
 - **Website:** [krasikralev.com](https://krasikralev.com)
