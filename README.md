@@ -13,16 +13,16 @@ I build modern, performant web experiences and AI-powered tools that solve real 
 ## Tech Stack
 
 **Frontend:** Astro, React, Tailwind CSS, TypeScript, HTML/CSS  
-**Backend:** Node.js, Express, Java, REST APIs  
-**AI/Automation:** Claude API, MCP, AI agent workflows  
+**Backend:** Node.js, Express, Next.js, REST APIs  
+**AI/Automation:** Claude API, MCP, Ollama, NVIDIA Jetson, AI agent workflows  
 **Tools:** Git, Vercel, Electron, Playwright
 
 ## Featured Projects
 
 | Project | Description |
 |---------|-------------|
+| [ClawBox](https://github.com/ID-Robots/clawbox) | Private AI assistant on NVIDIA Jetson — setup wizard, dashboard & 580+ skills |
 | [Claude Meter](https://github.com/KrasimirKralev/claude-usage-widget) | Desktop widget for real-time Claude subscription usage tracking |
-| [ClawBox](https://github.com/SpitOnYourFace/ClawBoxProject) | Component inventory management system built with Java Swing & H2 Database |
 | [Business Website Templates](https://github.com/KrasimirKralev?tab=repositories) | Production-ready website templates for barbershops, dental clinics, law firms, fitness gyms & more |
 
 ## Let's Connect
