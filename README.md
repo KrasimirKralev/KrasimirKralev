@@ -22,8 +22,6 @@ I build modern, performant web experiences and AI-powered tools that solve real 
 | Project | Description |
 |---------|-------------|
 | [ClawBox](https://github.com/ID-Robots/clawbox) | Private AI assistant on NVIDIA Jetson — setup wizard, dashboard & 580+ skills |
-| [Claude Meter](https://github.com/KrasimirKralev/claude-usage-widget) | Desktop widget for real-time Claude subscription usage tracking |
-| [Business Website Templates](https://github.com/KrasimirKralev?tab=repositories) | Production-ready website templates for barbershops, dental clinics, law firms, fitness gyms & more |
 
 ## Let's Connect
 
