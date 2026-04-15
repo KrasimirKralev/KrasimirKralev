@@ -22,6 +22,7 @@ I build modern, performant web experiences and AI-powered tools that solve real 
 | Project | Description |
 |---------|-------------|
 | [ClawBox](https://github.com/ID-Robots/clawbox) | Private AI assistant on NVIDIA Jetson — setup wizard, dashboard & 580+ skills |
+| [OpenClaw](https://github.com/openclaw/openclaw) | Contributor to the open-source personal AI assistant — any OS, any platform |
 
 ## Beyond Code
 
