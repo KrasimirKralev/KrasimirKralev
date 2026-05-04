@@ -24,6 +24,12 @@ I build modern, performant web experiences and AI-powered tools that solve real 
 | [ClawBox](https://github.com/ID-Robots/clawbox) | Private AI assistant on NVIDIA Jetson — setup wizard, dashboard & 580+ skills |
 | [OpenClaw](https://github.com/openclaw/openclaw) | Contributor to the open-source personal AI assistant — any OS, any platform |
 
+## A note on AI-assisted contributions
+
+PRs I open to public OSS are AI-assisted, reviewed by hand before push, run through local
+lint/typecheck/tests, and clearly marked `[ai-assisted]` per project conventions. I'm a real
+human reviewing every diff — happy to redirect or close if a fix isn't right.
+
 ## Beyond Code
 
 - Lead guitarist for **Slathe**
