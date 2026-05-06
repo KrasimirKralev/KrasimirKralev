@@ -1,4 +1,5 @@
-<!-- BANNER -->
+# Krasimir Kralev
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12&height=180&section=header&text=Krasimir%20Kralev&fontColor=ffffff&fontSize=58&fontAlignY=38&desc=COO%20at%20IDRobots%20%E2%80%A2%20Full-Stack%20%2B%20AI%20on%20edge&descAlignY=62&descAlign=50&descSize=18" alt="banner"/>
 </p>
