@@ -1,4 +1,4 @@
-## Krasimir Kralev
+# Krasimir Kralev
 
 **COO @ [IDRobots](https://idrobots.com)** · robotics & autonomous agents · Plovdiv, Bulgaria
 
