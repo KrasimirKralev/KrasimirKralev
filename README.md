@@ -8,8 +8,7 @@ I build AI-driven products end-to-end — from hardware integration on Jetson ed
 
 | Domain | Output |
 |---|---|
-| Robotics | [ID Robots](https://idrobots.com) / ClawBox — Jetson-based platform |
-| Web | [kristinasungarska.bg](https://kristinasungarska.bg) — production Astro 5 site |
+| Robotics | [ID Robots](https://idrobots.com) · [ClawBox](https://openclawhardware.dev) 🦀 — Jetson-based platform |
 | Open source | [openclaw/*](https://github.com/openclaw) contributions |
 | AI agents | Autonomous OSS contribution systems |
 
