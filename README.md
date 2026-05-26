@@ -18,4 +18,4 @@ TypeScript · Astro · React · Node.js · Python · Go · PowerShell · CUDA / 
 
 ---
 
-📧 [krasi@idrobots.com](mailto:krasi@idrobots.com)  ·  🌐 [idrobots.com](https://idrobots.com)
+📧 [krasi@idrobots.com](mailto:krasi@idrobots.com)  ·  🌐 [idrobots.com](https://idrobots.com)  ·  🦀 [openclawhardware.dev](https://openclawhardware.dev/)
