@@ -8,7 +8,7 @@ I build AI-driven products end-to-end — from hardware integration on Jetson ed
 
 | Domain | Output |
 |---|---|
-| Robotics | [ID Robots](https://idrobots.com) · [ClawBox](https://openclawhardware.dev) 🦀 — Jetson-based platform |
+| Robotics | [ID Robots](https://idrobots.com) · [ClawBox](https://clawbox.tech) 🦀 — Jetson-based platform |
 | Open source | [openclaw/*](https://github.com/openclaw) contributions |
 | AI agents | Autonomous OSS contribution systems |
 
@@ -18,4 +18,4 @@ TypeScript · Astro · React · Node.js · Python · Go · PowerShell · CUDA / 
 
 ---
 
-📧 [krasi@idrobots.com](mailto:krasi@idrobots.com)  ·  🌐 [idrobots.com](https://idrobots.com)  ·  🦀 [openclawhardware.dev](https://openclawhardware.dev/)
+📧 [krasi@idrobots.com](mailto:krasi@idrobots.com)  ·  🌐 [idrobots.com](https://idrobots.com)  ·  🦀 [clawbox.tech](https://clawbox.tech)
