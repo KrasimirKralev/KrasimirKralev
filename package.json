@@ -1,0 +1,23 @@
+{
+  "name": "clawbox-claw-machine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-playing ClawBox claw-machine animation of my GitHub contribution graph",
+  "scripts": {
+    "build:svg": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "playwright": "^1.49.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
