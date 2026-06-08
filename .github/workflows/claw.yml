@@ -1,0 +1,59 @@
+name: ClawBox claw machine
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # daily at 06:00 UTC
+  workflow_dispatch: # manual run
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/claw.yml'
+
+permissions:
+  contents: write
+
+# Avoid overlapping runs racing to push the output branch.
+concurrency:
+  group: claw-machine
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the claw-machine SVGs
+        env:
+          # Default token reads the public contribution calendar. If it ever
+          # comes back empty, add a CONTRIB_TOKEN PAT (read:user) and it wins.
+          GITHUB_TOKEN: ${{ secrets.CONTRIB_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_LOGIN: ${{ github.repository_owner }}
+          OUT_DIR: ${{ runner.temp }}/out
+        run: npm run build:svg
+
+      - name: Publish to the output branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUT_DIR: ${{ runner.temp }}/out
+        run: |
+          cd "$OUT_DIR"
+          git init -q
+          git checkout -q -b output
+          git add claw-dark.svg claw-light.svg
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m 'chore: refresh claw machine'
+          git push -f -q \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            output
