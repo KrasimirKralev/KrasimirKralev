@@ -25,8 +25,8 @@ const GAP = 2;
 const PITCH = CELL + GAP; // 13
 const ROWS = 7;
 const PAD = 18;
-const TOP = 70; // headroom above the grid: rail, parked crab, and a carry lane
-const RAIL_Y = PAD + 16;
+const TOP = 94; // headroom above the grid: tall title band, rail, carry lane
+const RAIL_Y = PAD + 40; // rail sits below a tall header that holds the big logo
 const RIGHT_ZONE = 66; // box + HUD column to the right of the grid
 const CRAB_SCALE = 1.45;
 
@@ -167,8 +167,8 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const logoSrc =
     opts.logo === 'mascot' ? CRAB_MASCOT : opts.logo === 'icon' ? CLAWBOX_ICON : null;
   const title = logoSrc
-    ? `<image href="${logoSrc}" x="${PAD}" y="3" width="21" height="30" preserveAspectRatio="xMidYMid meet"/>` +
-      `<text x="${PAD + 27}" y="${PAD + 5}" class="brand">CLAWBOX</text>`
+    ? `<image href="${logoSrc}" x="${PAD}" y="4" width="35" height="52" preserveAspectRatio="xMidYMid meet"/>` +
+      `<text x="${PAD + 42}" y="36" class="brand">CLAWBOX</text>`
     : `<text x="${PAD}" y="${PAD + 4}" class="brand">` +
       `<tspan class="emoji">&#129408;</tspan> CLAWBOX</text>`;
 
