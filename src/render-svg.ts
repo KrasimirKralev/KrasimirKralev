@@ -167,8 +167,8 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const logoSrc =
     opts.logo === 'mascot' ? CRAB_MASCOT : opts.logo === 'icon' ? CLAWBOX_ICON : null;
   const title = logoSrc
-    ? `<image href="${logoSrc}" x="${PAD}" y="${PAD - 14}" width="26" height="26"/>` +
-      `<text x="${PAD + 32}" y="${PAD + 5}" class="brand">CLAWBOX</text>`
+    ? `<image href="${logoSrc}" x="${PAD}" y="3" width="21" height="30" preserveAspectRatio="xMidYMid meet"/>` +
+      `<text x="${PAD + 27}" y="${PAD + 5}" class="brand">CLAWBOX</text>`
     : `<text x="${PAD}" y="${PAD + 4}" class="brand">` +
       `<tspan class="emoji">&#129408;</tspan> CLAWBOX</text>`;
 
