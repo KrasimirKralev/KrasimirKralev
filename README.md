@@ -27,10 +27,8 @@ I build AI-driven products end-to-end — from hardware integration on Jetson ed
 
 ### Tech
 
-TypeScript · Astro · React · Node.js · Python · Go · PowerShell · CUDA / Jetson · Claude Agent SDK
+TypeScript · Astro · React · Node.js · Python · PowerShell · CUDA / Jetson · Claude Agent SDK
 
 ---
 
 📧 [krasi@idrobots.com](mailto:krasi@idrobots.com)  ·  🌐 [idrobots.com](https://idrobots.com)  ·  🦀 [clawbox.tech](https://clawbox.tech)
-
-<sub>The crab up top is a self-playing SVG — a ClawBox claw machine that harvests my real contribution graph, regenerated daily. [How it works →](docs/superpowers/specs/2026-06-08-clawbox-claw-machine-design.md)</sub>

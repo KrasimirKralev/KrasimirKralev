@@ -4,6 +4,7 @@ import { fetchContributions } from './fetch-contributions';
 import { planSweep } from './plan-sweep';
 import { renderSvg } from './render-svg';
 import { DARK, LIGHT } from './palette';
+import { dailySeed } from './daily';
 
 const login = process.env.GH_LOGIN ?? 'KrasimirKralev';
 const token = process.env.GITHUB_TOKEN ?? process.env.CONTRIB_TOKEN;
@@ -15,8 +16,7 @@ if (!token) {
 }
 
 const date = new Date().toISOString().slice(0, 10);
-// Seed the pickup order from the date: a fresh random path each day, reproducible.
-const seed = [...date].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+const seed = dailySeed(date);
 
 const grid = await fetchContributions(login, token);
 const plan = planSweep(grid);
@@ -28,7 +28,7 @@ const targets = [
 ];
 
 for (const { file, palette } of targets) {
-  const svg = renderSvg(plan, palette, { date, seed });
+  const svg = renderSvg(plan, palette, { date, seed, logo: 'icon' });
   const path = join(outDir, file);
   writeFileSync(path, svg, 'utf8');
   console.log(`${path}  (${(svg.length / 1024).toFixed(1)} KB)`);

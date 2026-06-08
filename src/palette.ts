@@ -21,16 +21,18 @@ export interface Palette {
 }
 
 // GitHub's own contribution greens, so the grid reads as a real contribution graph.
+// A panel a notch lighter than GitHub's dark page (#0d1117) so the machine
+// doesn't vanish into it, plus brighter empty sockets so the grid stays legible.
 export const DARK: Palette = {
   name: 'dark',
-  background: '#0d1117',
-  frame: '#30363d',
-  cell: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
+  background: '#12171f',
+  frame: '#3a424d',
+  cell: ['#1f2632', '#0e4429', '#1a7f37', '#2ea043', '#46d160'],
   accent: '#ff7a18',
   accentDark: '#b8470a',
-  hardware: '#8b949e',
+  hardware: '#9aa4b0',
   text: '#e6edf3',
-  textDim: '#7d8590',
+  textDim: '#8b949e',
 };
 
 export const LIGHT: Palette = {

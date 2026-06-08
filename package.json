@@ -6,6 +6,8 @@
   "description": "Self-playing ClawBox claw-machine animation of my GitHub contribution graph",
   "scripts": {
     "build:svg": "tsx src/index.ts",
+    "preview:crabs": "tsx scripts/preview-variants.ts",
+    "preview:logos": "tsx scripts/preview-logos.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
