@@ -28,7 +28,7 @@ const targets = [
 ];
 
 for (const { file, palette } of targets) {
-  const svg = renderSvg(plan, palette, { date, seed, logo: 'icon' });
+  const svg = renderSvg(plan, palette, { date, seed });
   const path = join(outDir, file);
   writeFileSync(path, svg, 'utf8');
   console.log(`${path}  (${(svg.length / 1024).toFixed(1)} KB)`);

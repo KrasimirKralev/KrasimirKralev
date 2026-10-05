@@ -1,5 +1,5 @@
 /** Small deterministic PRNG (mulberry32). */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a |= 0;

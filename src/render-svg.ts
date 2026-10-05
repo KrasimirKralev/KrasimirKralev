@@ -1,435 +1,427 @@
-import { CLAWBOX_ICON, CRAB_MASCOT } from './logo';
+import {
+  CELL,
+  CRAB_H,
+  CRAB_W,
+  HOLD,
+  PITCH,
+  cabinetBody,
+  deckCss,
+  deckMarkup,
+  deckSpots,
+  defs,
+  frameCss,
+  glassShine,
+  glassShineCss,
+  layout,
+  marqueeCss,
+  marqueeMarkup,
+  pileSlots,
+  poseMarkup,
+  prizeBox,
+  railMarkup,
+  round,
+  socketsMarkup,
+  type Layout,
+} from './cabinet';
 import type { Palette } from './palette';
-import { seededOrder } from './shuffle';
+import { mulberry32, seededOrder } from './shuffle';
+import {
+  RESET_START,
+  SWEEP_END,
+  planTimeline,
+  poseChanges,
+  type PoseChange,
+  type Timeline,
+} from './timeline';
 import type { ContributionLevel, SweepPlan } from './types';
 
-export type CrabStyle = 'classic' | 'robo' | 'claw';
-/** Title brand mark: the crab emoji, the ClawBox icon, or the crab mascot. */
-export type LogoStyle = 'emoji' | 'icon' | 'mascot';
-
-/** Optional HUD / variant metadata. */
+/** Optional HUD metadata. */
 export interface RenderOptions {
-  /** Date label shown in the HUD (e.g. "2026-06-09"). */
+  /** Date shown on the deck (e.g. "2026-06-09"). */
   date?: string;
-  /** Seed for the (deterministic) random pickup order. */
+  /** Seed for the day's pickup order and missed grabs. */
   seed?: number;
-  /** Which crab design to draw. */
-  crabStyle?: CrabStyle;
-  /** Which brand mark to show in the title. */
-  logo?: LogoStyle;
 }
 
-// --- Layout (px) -------------------------------------------------------------
-const CELL = 11;
-const GAP = 2;
-const PITCH = CELL + GAP; // 13
-const ROWS = 7;
-const PAD = 18;
-const TOP = 94; // headroom above the grid: tall title band, rail, carry lane
-const RAIL_Y = PAD + 40; // rail sits below a tall header that holds the big logo
-const RIGHT_ZONE = 66; // box + HUD column to the right of the grid
-const CRAB_SCALE = 1.45;
+const CARRY_LIFT = 6;
+const CABLE_LEN = 320; // longer than the deepest dip, cut off at the rail // the crab hoists a commit this far above its parked height
+const SLIP_HOIST = 0.55; // a missed grab gets this share of the way up before it falls
+const SWING = 4; // degrees the crab swings past a stop
+const CONFETTI = 18;
 
-// --- Animation timeline (% of one loop) --------------------------------------
-const APPROACH = 9; // the crab glides in from the left home before the first pick
-const SWEEP_END = 84; // last commit delivered; the rest is the glide home
-const CARRY_LIFT = 22; // how high the crab hoists a commit into the carry lane
-const CARRY_PEEK = 17; // how far the held commit hangs below the hoisted crab
-const BOX_DROP_INSET = 13; // how far the claw dips into the box to release
-// One commit's slice is divided into these sub-phases (fractions, must ascend).
-const PHASE = {
-  arrive: 0.18, // crab over the column, claw up
-  grab: 0.3, // claw down on the commit
-  lift: 0.42, // hoisted into the lane
-  boxArrive: 0.74, // carried to the box
-  drop: 0.88, // released into the box
-  clear: 0.96, // claw retracted, commit settled
-} as const;
+const POSES = ['idle', 'runLeft', 'runRight', 'jump', 'failed'] as const;
+type Pose = (typeof POSES)[number];
 
-const round = (n: number): string => String(Math.round(n * 100) / 100);
-
-interface FlatCell {
+interface Commit {
   column: number;
   row: number;
   level: ContributionLevel;
 }
 
-interface DipStop {
-  pct: number;
-  depth: number; // px the crab descends from its parked rest position
-}
+/** Pixels to one decimal: plenty at README scale, and it keeps the file small. */
+const px = (n: number): string => String(Math.round(n * 10) / 10);
 
-/** The ClawBox crab, drawn centered at the local origin, by style. */
-function crabMarkup(p: Palette, style: CrabStyle): string {
-  if (style === 'robo') return crabRobo(p);
-  if (style === 'claw') return crabClaw(p);
-  return crabClassic(p);
-}
-
-function crabClassic(p: Palette): string {
-  return (
-    `<g class="crab">` +
-    `<g stroke="${p.accentDark}" stroke-width="1.4" stroke-linecap="round">` +
-    `<path d="M-6 3 l-5 2"/><path d="M-6 5 l-5 4"/><path d="M6 3 l5 2"/><path d="M6 5 l5 4"/>` +
-    `</g>` +
-    `<path class="claw-l" d="M-7 -1 q-6 -3 -10 -1 q-2 2 0 4 q3 1 6 -1" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>` +
-    `<path class="claw-r" d="M7 -1 q6 -3 10 -1 q2 2 0 4 q-3 1 -6 -1" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>` +
-    `<ellipse cx="0" cy="0" rx="9" ry="6.8" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<line x1="-3" y1="-6" x2="-3.5" y2="-10.5" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<line x1="3" y1="-6" x2="3.5" y2="-10.5" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<circle cx="-3.5" cy="-11" r="1.8" fill="#fff" stroke="${p.accentDark}" stroke-width="0.6"/>` +
-    `<circle cx="3.5" cy="-11" r="1.8" fill="#fff" stroke="${p.accentDark}" stroke-width="0.6"/>` +
-    `<circle cx="-3.2" cy="-11" r="0.85" fill="#1b1b1b"/>` +
-    `<circle cx="3.8" cy="-11" r="0.85" fill="#1b1b1b"/>` +
-    `</g>`
-  );
-}
-
-function crabRobo(p: Palette): string {
-  return (
-    `<g class="crab">` +
-    `<g stroke="${p.accentDark}" stroke-width="1.6" stroke-linecap="round">` +
-    `<path d="M-7 4 l-4 3"/><path d="M-3 6 l-2 4"/><path d="M7 4 l4 3"/><path d="M3 6 l2 4"/>` +
-    `</g>` +
-    `<path class="claw-l" d="M-8 -2 l-6 -2 l-2 3 l3 2 l3 -1 l1 2 l2 -1 z" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>` +
-    `<path class="claw-r" d="M8 -2 l6 -2 l2 3 l-3 2 l-3 -1 l-1 2 l-2 -1 z" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>` +
-    `<rect x="-9" y="-6" width="18" height="12" rx="3" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<circle cx="-6.5" cy="-3.5" r="0.9" fill="${p.accentDark}"/><circle cx="6.5" cy="-3.5" r="0.9" fill="${p.accentDark}"/>` +
-    `<circle cx="-6.5" cy="3.5" r="0.9" fill="${p.accentDark}"/><circle cx="6.5" cy="3.5" r="0.9" fill="${p.accentDark}"/>` +
-    `<rect x="-5.5" y="-2.5" width="11" height="4.5" rx="2.2" fill="#0b0e12"/>` +
-    `<rect x="-4.5" y="-1.7" width="3" height="2.9" rx="1" fill="#fff"/>` +
-    `<line x1="0" y1="-6" x2="0" y2="-11.5" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<circle cx="0" cy="-12" r="1.6" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="0.6"/>` +
-    `</g>`
-  );
-}
-
-function crabClaw(p: Palette): string {
-  return (
-    `<g class="crab">` +
-    `<path class="claw-l" d="M-3 3 q-11 3 -10 13 q3.5 2.5 6 -1 q-3 -7 5 -9" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.5" stroke-linejoin="round"/>` +
-    `<path class="claw-r" d="M3 3 q11 3 10 13 q-3.5 2.5 -6 -1 q3 -7 -5 -9" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.5" stroke-linejoin="round"/>` +
-    `<ellipse cx="0" cy="1" rx="7" ry="5.2" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.2"/>` +
-    `<line x1="-2.6" y1="-4" x2="-3" y2="-8" stroke="${p.accentDark}" stroke-width="1.1"/>` +
-    `<line x1="2.6" y1="-4" x2="3" y2="-8" stroke="${p.accentDark}" stroke-width="1.1"/>` +
-    `<circle cx="-3" cy="-8.5" r="1.7" fill="#fff" stroke="${p.accentDark}" stroke-width="0.6"/>` +
-    `<circle cx="3" cy="-8.5" r="1.7" fill="#fff" stroke="${p.accentDark}" stroke-width="0.6"/>` +
-    `<circle cx="-2.7" cy="-8.5" r="0.8" fill="#1b1b1b"/>` +
-    `<circle cx="3.3" cy="-8.5" r="0.8" fill="#1b1b1b"/>` +
-    `</g>`
-  );
-}
+/** A keyframes block from [percent, declarations] stops. */
+const keyframes = (name: string, stops: [number, string][]): string =>
+  `@keyframes ${name}{${stops.map(([t, css]) => `${round(t)}%{${css}}`).join('')}}`;
 
 /** Render a complete, self-animating, camo-safe SVG for one harvest plan. */
 export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {}): string {
-  const crabStyle = opts.crabStyle ?? 'robo';
-  const cols = plan.columns;
-  const gridLeft = PAD;
-  const gridTop = PAD + TOP;
-  const gridW = cols * PITCH - GAP;
-  const gridH = ROWS * PITCH - GAP;
-  const width = gridLeft + gridW + RIGHT_ZONE + PAD;
-  const height = gridTop + gridH + PAD + 10;
-
-  const colCenterX = (col: number): number => gridLeft + col * PITCH + CELL / 2;
-  const cellX = (col: number): number => gridLeft + col * PITCH;
-  const cellY = (row: number): number => gridTop + row * PITCH;
-  const cellCenterY = (row: number): number => cellY(row) + CELL / 2;
-
-  // Crab geometry: parks just above the grid, descends to each commit's row.
-  const armRestY = gridTop - 6;
-  const parkedLen = armRestY - RAIL_Y; // cable length at rest
-  const homeX = colCenterX(0);
-
-  // Collection box on the right.
-  const boxX = gridLeft + gridW + 15;
-  const boxW = 30;
-  const boxH = 44;
-  const boxTop = gridTop + 1;
-  const boxBottom = boxTop + boxH;
-  const boxCenterX = boxX + boxW / 2;
-  const boxInnerY = boxBottom - 11; // where a commit settles in the box
-  const boxDropDepth = boxTop + BOX_DROP_INSET - armRestY; // claw dip to drop into the box
-
-  // Flatten into harvest order, then shuffle (deterministic per seed).
-  const cells: FlatCell[] = [];
-  for (const step of plan.steps) {
-    for (const cell of step.cells) {
-      cells.push({ column: step.column, row: cell.row, level: cell.level });
-    }
-  }
-  const pick = seededOrder(cells.length, opts.seed ?? 1).map((i) => cells[i]!);
-  const M = pick.length;
-  const dur = Math.min(46, Math.max(22, 9 + plan.totalCells * 0.5));
-
-  const bg = `<rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="${p.background}"/>`;
-  const frame = `<rect x="3" y="3" width="${width - 6}" height="${height - 6}" rx="9" fill="none" stroke="${p.frame}" stroke-width="1.5"/>`;
-  const logoSrc =
-    opts.logo === 'mascot' ? CRAB_MASCOT : opts.logo === 'icon' ? CLAWBOX_ICON : null;
-  const title = logoSrc
-    ? `<image href="${logoSrc}" x="${PAD}" y="4" width="35" height="52" preserveAspectRatio="xMidYMid meet"/>` +
-      `<text x="${PAD + 42}" y="36" class="brand">CLAWBOX</text>`
-    : `<text x="${PAD}" y="${PAD + 4}" class="brand">` +
-      `<tspan class="emoji">&#129408;</tspan> CLAWBOX</text>`;
-
-  const railX1 = boxCenterX + 6;
-  const rail =
-    `<rect x="${gridLeft}" y="${RAIL_Y - 2}" width="${railX1 - gridLeft}" height="4" rx="2" fill="${p.hardware}"/>` +
-    `<rect x="${gridLeft - 2}" y="${RAIL_Y - 5}" width="5" height="10" rx="1.5" fill="${p.accentDark}"/>` +
-    `<rect x="${railX1 - 3}" y="${RAIL_Y - 5}" width="5" height="10" rx="1.5" fill="${p.accentDark}"/>`;
-
-  // Static "sockets" under every cell; lit cells layered on top.
-  const sockets: string[] = [];
-  for (let c = 0; c < cols; c++) {
-    for (let r = 0; r < ROWS; r++) {
-      sockets.push(
-        `<rect x="${cellX(c)}" y="${cellY(r)}" width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[0]}"/>`,
-      );
-    }
-  }
-
-  // Crab rig: cable (stretches) + arm (dips, carries the bigger crab) + carriage.
-  const cable = `<rect class="cable" x="-1" y="${RAIL_Y}" width="2" height="${parkedLen}" fill="${p.hardware}"/>`;
-  // Resting offset + scale on an inner <g>; the animated translateY lives on
-  // .claw-arm. (A CSS transform animation REPLACES an element's transform.)
-  const clawArm =
-    `<g class="claw-arm"><g transform="translate(0 ${armRestY}) scale(${CRAB_SCALE})">` +
-    `${crabMarkup(p, crabStyle)}</g></g>`;
+  const l = layout(plan.columns);
+  const seed = opts.seed ?? 1;
+  const crabRigAt = (pose: string) =>
+    `<g clip-path="url(#belowRail)"><g class="arm">` +
+    `<rect x="-1" y="${round(l.armRest - CABLE_LEN)}" width="2" height="${CABLE_LEN}" fill="${p.hardware}"/>` +
+    `<g transform="translate(${-CRAB_W / 2} ${round(l.armRest)})"><g class="squash">${pose}</g></g></g></g>`;
   const carriage =
-    `<rect x="-10" y="${RAIL_Y - 6}" width="20" height="11" rx="2.5" fill="${p.accent}"/>` +
-    `<rect x="-10" y="${RAIL_Y - 6}" width="20" height="11" rx="2.5" fill="none" stroke="${p.accentDark}" stroke-width="1"/>`;
-  const crabRig = cable + clawArm + carriage;
+    `<rect x="-11" y="${l.railY - 6}" width="22" height="12" rx="3" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>`;
 
-  // --- Idle (SCANNING) branch ------------------------------------------------
+  const staticCss = [
+    marqueeCss(p),
+    deckCss(),
+    glassShineCss(l),
+    frameCss(),
+    `.pose{opacity:0}.shown{opacity:1}`,
+    `.cell{transform-box:fill-box;transform-origin:center}`,
+    // The <use> inside spans the whole sprite sheet, so fill-box would scale around
+    // the sheet; pin the origin to the crab's feet in its own coordinates instead.
+    `.squash{transform-box:view-box;transform-origin:${round(CRAB_W / 2)}px ${round(CRAB_H)}px}`,
+  ];
+  const frameParts = [
+    defs(l, p),
+    cabinetBody(l, p),
+    marqueeMarkup(l, p),
+    glassShine(l),
+    railMarkup(l, p),
+    socketsMarkup(l),
+    prizeBox(l, p),
+    deckMarkup(l, p, opts.date),
+  ];
+
+  // --- Nothing to collect: the crab scans the empty grid ----------------------
   if (plan.isEmpty) {
-    const beamX = colCenterX(Math.floor(cols / 2));
+    const s = deckSpots(l);
+    const mid = l.gridLeft + l.gridW / 2;
     const style = [
-      brandCss(p),
-      crabIdleCss(),
-      `.scan{font:600 11px ui-monospace,Menlo,Consolas,monospace;fill:${p.textDim};letter-spacing:2px;animation:blink 1.4s steps(2) infinite}`,
-      `@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:.25}}`,
-      `.beam{animation:scan 3.6s ease-in-out infinite}`,
-      `@keyframes scan{0%,100%{transform:translateX(${round(gridLeft - beamX)}px)}50%{transform:translateX(${round(gridLeft + gridW - beamX)}px)}}`,
+      ...staticCss,
+      `.scan{font:700 12px ui-monospace,Menlo,Consolas,monospace;letter-spacing:3px;text-anchor:middle;animation:blink 1.4s steps(1) infinite}`,
+      `.trolley{animation:scan 5s ease-in-out infinite}`,
+      `@keyframes scan{0%,100%{transform:translateX(${round(l.gridLeft + 20)}px)}50%{transform:translateX(${round(l.gridLeft + l.gridW - 20)}px)}}`,
     ].join('');
     return [
-      svgOpen(width, height, 'ClawBox crab, scanning an empty contribution grid'),
+      svgOpen(l, 'The ClawBox crab, scanning an empty contribution grid'),
       `<style>${style}</style>`,
-      bg,
-      frame,
-      title,
-      rail,
-      `<g class="beam"><g transform="translate(${beamX} 0)">${crabRig}</g></g>`,
-      ...sockets,
-      `<text x="${gridLeft}" y="${gridTop + gridH + 18}" class="scan">SCANNING&#8230;</text>`,
+      ...frameParts,
+      `<text x="${round(mid)}" y="${round(l.gridTop + l.gridH / 2 + 4)}" class="scan" fill="${p.textDim}">SCANNING&#8230;</text>`,
+      `<text x="${s.scoreX + 124}" y="${round(s.scoreY + 26)}" class="digits" fill="${p.accent}">0</text>`,
+      `<g class="trolley" transform="translate(${round(mid)} 0)">${crabRigAt(poseMarkup('idle', CRAB_W, 'pose shown'))}${carriage}</g>`,
       `</svg>`,
     ].join('');
   }
 
-  // --- Lit cells (one grab-carry-drop cycle each) ----------------------------
-  const litCells = pick.map(
-    (cell, j) =>
-      `<rect class="cell h${j}" x="${cellX(cell.column)}" y="${cellY(cell.row)}" ` +
-      `width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[cell.level]}"/>`,
+  // --- The day's order, and the moments of every pickup -----------------------
+  const all: Commit[] = plan.steps.flatMap((step) =>
+    step.cells.map((cell) => ({ column: step.column, row: cell.row, level: cell.level })),
   );
+  const order = seededOrder(all.length, seed).map((i) => all[i]!);
+  const timeline = planTimeline(order.length, seed);
+  const dur = `${round(timeline.durationS)}s`;
+  const changes = poseChanges(timeline);
+  const usedPoses = POSES.filter((pose) => changes.some((c) => c.pose === pose));
 
-  // --- Collection box + HUD --------------------------------------------------
-  const box =
-    `<g class="box">` +
-    `<rect x="${boxX + 2}" y="${boxTop + 2}" width="${boxW - 4}" height="${boxH - 4}" rx="2" fill="${p.accent}" opacity="0.08"/>` +
-    `<path d="M${boxX} ${boxTop} L${boxX} ${boxBottom} L${boxX + boxW} ${boxBottom} L${boxX + boxW} ${boxTop}" ` +
-    `fill="none" stroke="${p.accent}" stroke-width="2" stroke-linejoin="round"/>` +
-    `<rect x="${boxX - 2}" y="${boxTop - 3}" width="${boxW + 4}" height="4" rx="1.5" fill="${p.accent}"/>` +
-    `</g>`;
-  const numY = boxBottom + 31;
-  const hud =
-    `<text x="${boxCenterX}" y="${boxBottom + 14}" class="hud-label">HAUL</text>` +
-    (opts.date ? `<text x="${boxCenterX}" y="${boxBottom + 43}" class="hud-date">${opts.date}</text>` : '');
+  const geo = geometry(l);
+  const slots = pileSlots(l, order.length);
+  const motion = crabMotion(order, timeline, geo);
 
-  // --- Timeline: grab → carry → drop into the box, one commit at a time ------
-  const sl = (SWEEP_END - APPROACH) / M; // slice of the loop per commit
-  const bBefore = Math.min(0.5, sl * 0.2); // box catch-bounce lead-in
-  const bAfter = Math.min(0.9, sl * 0.45); // box catch-bounce settle
-
-  const trolleyStops: string[] = [`0%{transform:translateX(${round(homeX)}px)}`];
-  const dipStops: DipStop[] = [{ pct: 0, depth: 0 }];
-  const boxStops: string[] = ['0%{transform:scaleY(1)}'];
-  const harvestKeyframes: string[] = [];
-  // When each commit lands, for the live counter. Monotonically increasing by
-  // construction (tDrop grows with j) — the counter's reveal windows rely on it.
-  const dropTimes: number[] = [];
-
-  pick.forEach((cell, j) => {
-    const ss = APPROACH + j * sl;
-    const tArrive = ss + PHASE.arrive * sl;
-    const tGrab = ss + PHASE.grab * sl;
-    const tLift = ss + PHASE.lift * sl;
-    const tBoxArr = ss + PHASE.boxArrive * sl;
-    const tDrop = ss + PHASE.drop * sl;
-    const tClear = ss + PHASE.clear * sl;
-
-    const colX = colCenterX(cell.column);
-    const rowCY = cellCenterY(cell.row);
-    const rowDepth = rowCY - armRestY;
-    const dyHold = armRestY - CARRY_LIFT + CARRY_PEEK - rowCY; // hoisted into the lane, peeking below the crab
-    const dxBox = boxCenterX - colX; // carry across to the box
-    const dyDrop = boxInnerY - rowCY;
-
-    // Crab travels to the column, holds while it descends/grabs/lifts, then
-    // carries to the box and holds while it drops in.
-    trolleyStops.push(`${round(tArrive)}%{transform:translateX(${round(colX)}px)}`);
-    trolleyStops.push(`${round(tLift)}%{transform:translateX(${round(colX)}px)}`);
-    trolleyStops.push(`${round(tBoxArr)}%{transform:translateX(${round(boxCenterX)}px)}`);
-    trolleyStops.push(`${round(tDrop)}%{transform:translateX(${round(boxCenterX)}px)}`);
-
-    dipStops.push({ pct: tArrive, depth: 0 });
-    dipStops.push({ pct: tGrab, depth: rowDepth });
-    dipStops.push({ pct: tLift, depth: -CARRY_LIFT }); // hoist up into the lane
-    dipStops.push({ pct: tBoxArr, depth: -CARRY_LIFT }); // carry it high to the box
-    dipStops.push({ pct: tDrop, depth: boxDropDepth });
-    dipStops.push({ pct: tClear, depth: 0 });
-
-    // The commit rides with the crab: sits in the grid, lifts into the claws,
-    // moves across to the box (matching the crab's X), then drops in.
-    harvestKeyframes.push(
-      `@keyframes hv${j}{` +
-        `0%,${round(tGrab)}%{opacity:1;transform:translate(0,0) scale(1)}` +
-        `${round(tLift)}%{transform:translate(0,${round(dyHold)}px) scale(1)}` +
-        `${round(tBoxArr)}%{transform:translate(${round(dxBox)}px,${round(dyHold)}px) scale(1)}` +
-        `${round(tDrop)}%{opacity:1;transform:translate(${round(dxBox)}px,${round(dyDrop)}px) scale(.5)}` +
-        `${round(tClear)}%,100%{opacity:0;transform:translate(${round(dxBox)}px,${round(dyDrop)}px) scale(0)}}`,
-    );
-
-    boxStops.push(`${round(tDrop - bBefore)}%{transform:scaleY(1)}`);
-    boxStops.push(`${round(tDrop)}%{transform:scaleY(1.14)}`);
-    boxStops.push(`${round(tDrop + bAfter)}%{transform:scaleY(1)}`);
-    dropTimes.push(tDrop);
-  });
-
-  trolleyStops.push(`100%{transform:translateX(${round(homeX)}px)}`);
-  dipStops.push({ pct: 100, depth: 0 });
-  boxStops.push('100%{transform:scaleY(1)}');
-
-  const trolleyKeyframes = `@keyframes trolley{${trolleyStops.join('')}}`;
-  const clawKeyframes =
-    `@keyframes claw{` +
-    dipStops.map((s) => `${round(s.pct)}%{transform:translateY(${round(s.depth)}px)}`).join('') +
-    `}`;
-  const cableKeyframes =
-    `@keyframes cable{` +
-    dipStops.map((s) => `${round(s.pct)}%{transform:scaleY(${round(1 + s.depth / parkedLen)})}`).join('') +
-    `}`;
-  const boxKeyframes = `@keyframes boxCatch{${boxStops.join('')}}`;
-
-  const { counter, numberRules, numberKeyframes } = buildCounter(
-    dropTimes,
-    M,
-    boxCenterX,
-    numY,
-    dur,
+  const cells = order.map(
+    (c, j) =>
+      `<rect class="cell h${j}" x="${l.gridLeft + c.column * PITCH}" y="${round(geo.cellY(c.row))}" ` +
+      `width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[c.level]}"/>`,
   );
+  const pickupKeyframes = order.map((c, j) => pickupFrames(j, c, timeline, geo, slots[j]!, p));
+
+  const s = deckSpots(l);
+  const counter = scoreCounter(timeline, s.scoreX + 124, s.scoreY + 26, p);
+  const confetti = confettiBurst(l, p, seed);
 
   const style = [
-    brandCss(p),
-    crabIdleCss(),
-    `.hud-label{font:600 8px ui-monospace,Menlo,Consolas,monospace;fill:${p.textDim};letter-spacing:1.5px;text-anchor:middle}`,
-    `.hud-num{font:700 18px ui-monospace,Menlo,Consolas,monospace;fill:${p.accent};text-anchor:middle;opacity:0}`,
-    `.hud-date{font:400 7px ui-monospace,Menlo,Consolas,monospace;fill:${p.textDim};text-anchor:middle}`,
-    `.cell{transform-box:fill-box;transform-origin:center}`,
-    `.cable{transform-box:fill-box;transform-origin:center top;animation:cable ${dur}s linear infinite}`,
-    `.trolley{animation:trolley ${dur}s linear infinite}`,
-    `.claw-arm{animation:claw ${dur}s linear infinite}`,
-    `.box{transform-box:fill-box;transform-origin:center bottom;animation:boxCatch ${dur}s linear infinite}`,
-    ...pick.map((_, j) => `.h${j}{animation:hv${j} ${dur}s linear infinite}`),
-    ...numberRules,
-    trolleyKeyframes,
-    clawKeyframes,
-    cableKeyframes,
-    boxKeyframes,
-    ...harvestKeyframes,
-    ...numberKeyframes,
+    ...staticCss,
+    `.trolley{animation:trolley ${dur} ease-in-out infinite}`,
+    `.arm{animation:arm ${dur} ease-in-out infinite}`,
+    `.swing{transform-box:view-box;transform-origin:0 ${l.railY}px;animation:swing ${dur} ease-in-out infinite}`,
+    `.squash{animation:squash ${dur} linear infinite}`,
+    `.stick{transform-box:view-box;transform-origin:${s.stickX}px ${s.stickPivotY}px;animation:stick ${dur} step-end infinite}`,
+    `.grab-button{animation:button ${dur} step-end infinite}`,
+    ...usedPoses.map((pose) => `.pose-${pose}{animation:v-${pose} ${dur} step-end infinite}`),
+    ...order.map((_, j) => `.h${j}{animation:hv${j} ${dur} linear infinite}`),
+    counter.css(dur),
+    confetti.css(dur),
+    keyframes('trolley', motion.trolley),
+    keyframes('arm', motion.depth.map(([t, d]) => [t, `transform:translateY(${px(d)}px)`])),
+    keyframes('swing', motion.swing),
+    keyframes('squash', motion.squash),
+    keyframes('stick', stickFrames(changes)),
+    keyframes('button', buttonFrames(timeline, p)),
+    ...usedPoses.map((pose) => keyframes(`v-${pose}`, visibilityFrames(changes, pose))),
+    ...pickupKeyframes,
   ].join('');
 
+  const crab = usedPoses.map((pose) => poseMarkup(pose, CRAB_W)).join('');
   return [
-    svgOpen(width, height, `ClawBox crab carrying ${plan.totalCells} contribution commits into a box`),
+    svgOpen(l, `The ClawBox crab collecting ${plan.totalCells} contributions into a prize box`),
     `<style>${style}</style>`,
-    bg,
-    frame,
-    title,
-    rail,
-    ...sockets,
-    ...litCells,
-    box,
-    hud,
-    counter,
-    // Crab renders last so it stays on top of the grid as it lowers to grab.
-    `<g class="trolley" transform="translate(${homeX} 0)">${crabRig}</g>`,
+    ...frameParts,
+    counter.markup,
+    ...cells,
+    confetti.markup,
+    // The crab draws last so it stays in front of the grid as it lowers to grab.
+    `<g class="trolley" transform="translate(${round(geo.boxX)} 0)"><g class="swing">${crabRigAt(crab)}</g>${carriage}</g>`,
     `</svg>`,
   ].join('');
 }
 
+// --- Geometry shared by the crab and the commits -------------------------------
+
+interface Geometry {
+  l: Layout;
+  boxX: number;
+  colX: (col: number) => number;
+  cellY: (row: number) => number;
+  /** Crab dip (px below parked) that puts its feet on a row. */
+  grabDepth: (row: number) => number;
+  /** Crab dip that lowers a held commit into the box. */
+  dropDepth: number;
+}
+
+function geometry(l: Layout): Geometry {
+  const cellY = (row: number) => l.gridTop + row * PITCH;
+  return {
+    l,
+    boxX: l.box.x + l.box.w / 2,
+    colX: (col) => l.gridLeft + col * PITCH + CELL / 2,
+    cellY,
+    grabDepth: (row) => cellY(row) + CELL / 2 - HOLD - l.armRest,
+    dropDepth: l.box.y + 10 - HOLD - l.armRest,
+  };
+}
+
+/** Where a held commit's center sits, for a crab at this dip. */
+const heldY = (g: Geometry, depth: number): number => g.l.armRest + depth + HOLD;
+
+// --- The crab -------------------------------------------------------------------
+
+function crabMotion(order: Commit[], t: Timeline, g: Geometry) {
+  const trolley: [number, string][] = [[0, `transform:translateX(${round(g.boxX)}px)`]];
+  const depth: [number, number][] = [[0, 0]];
+  const swing: [number, string][] = [[0, 'transform:rotate(0)']];
+  const squash: [number, string][] = [[0, 'transform:scale(1)']];
+  const x = (v: number): string => `transform:translateX(${px(v)}px)`;
+  const rot = (deg: number): string => `transform:rotate(${px(deg)}deg)`;
+  const bump = (at: number, span: number) => {
+    squash.push(
+      [at - span, 'transform:scale(1)'],
+      [at, 'transform:scale(1.08,.86)'],
+      [at + span, 'transform:scale(1)'],
+    );
+  };
+
+  t.pickups.forEach((pk, j) => {
+    const c = order[j]!;
+    const colX = g.colX(c.column);
+    const dGrab = g.grabDepth(c.row);
+
+    trolley.push([pk.start, x(g.boxX)], [pk.arrive, x(colX)], [pk.lift, x(colX)], [pk.boxArrive, x(g.boxX)]);
+
+    depth.push([pk.arrive, 0], [pk.grab, dGrab]);
+    if (pk.slip) {
+      depth.push(
+        [pk.slip.lift, dGrab * SLIP_HOIST],
+        [pk.slip.fall, dGrab * SLIP_HOIST],
+        [pk.slip.regrab, dGrab],
+      );
+    }
+    depth.push(
+      [pk.lift, -CARRY_LIFT],
+      [pk.boxArrive, -CARRY_LIFT],
+      [pk.drop, g.dropDepth],
+      [pk.settle, 0],
+    );
+
+    // Overshoot when it stops, swing back, settle before the next move.
+    swing.push(
+      [pk.start, rot(0)],
+      [pk.arrive, rot(SWING)],
+      [(pk.arrive + pk.grab) / 2, rot(-SWING * 0.4)],
+      [pk.grab, rot(0)],
+      [pk.lift, rot(0)],
+      [pk.boxArrive, rot(-SWING)],
+      [(pk.boxArrive + pk.drop) / 2, rot(SWING * 0.4)],
+      [pk.drop, rot(0)],
+    );
+
+    const span = Math.min((pk.lift - pk.grab) * 0.3, 0.25);
+    bump(pk.grab, span);
+    if (pk.slip) bump(pk.slip.regrab, span);
+  });
+
+  trolley.push([100, x(g.boxX)]);
+  depth.push([SWEEP_END, 0], [100, 0]);
+  swing.push([100, rot(0)]);
+  squash.push([100, 'transform:scale(1)']);
+  return { trolley, depth, swing, squash };
+}
+
+/** Each pose shows only while it is the crab's current pose. */
+function visibilityFrames(changes: PoseChange[], pose: Pose): [number, string][] {
+  const stops: [number, string][] = [];
+  let shown: boolean | undefined;
+  for (const c of changes) {
+    const now = c.pose === pose;
+    if (now !== shown) stops.push([c.at, `opacity:${now ? 1 : 0}`]);
+    shown = now;
+  }
+  stops.push([100, `opacity:${changes[0]!.pose === pose ? 1 : 0}`]);
+  return stops;
+}
+
+/** The joystick leans the way the crab walks. */
+function stickFrames(changes: PoseChange[]): [number, string][] {
+  const angle = (pose: string) => (pose === 'runLeft' ? -20 : pose === 'runRight' ? 20 : 0);
+  const stops: [number, string][] = [];
+  let last: number | undefined;
+  for (const c of changes) {
+    const a = angle(c.pose);
+    if (a !== last) stops.push([c.at, `transform:rotate(${a}deg)`]);
+    last = a;
+  }
+  stops.push([100, 'transform:rotate(0deg)']);
+  return stops;
+}
+
+/** The GRAB button lights on every grab. */
+function buttonFrames(t: Timeline, p: Palette): [number, string][] {
+  const stops: [number, string][] = [[0, `fill:${p.button}`]];
+  for (const pk of t.pickups) {
+    stops.push([pk.grab, `fill:${p.buttonLit}`]);
+    if (pk.slip) stops.push([pk.slip.lift, `fill:${p.button}`], [pk.slip.regrab, `fill:${p.buttonLit}`]);
+    stops.push([pk.lift, `fill:${p.button}`]);
+  }
+  stops.push([100, `fill:${p.button}`]);
+  return stops;
+}
+
+// --- The commits ----------------------------------------------------------------
+
 /**
- * The live HUD counter: numbers 0..total stacked at one spot, each revealed for
- * its window so the tally ticks up by one as every commit lands in the box.
- * (SVG/CSS can't animate text content, so we reveal pre-rendered digits.)
+ * One commit's trip: it flashes when grabbed, rides under the crab to the box,
+ * drops onto the pile and stays there; at the end of the round every commit
+ * flies back to its day in the grid.
  */
-function buildCounter(
-  dropTimes: number[],
-  total: number,
-  x: number,
-  y: number,
-  dur: number,
-): { counter: string; numberRules: string[]; numberKeyframes: string[] } {
-  const parts: string[] = [];
-  const numberRules: string[] = [];
-  const numberKeyframes: string[] = [];
+function pickupFrames(
+  j: number,
+  c: Commit,
+  t: Timeline,
+  g: Geometry,
+  slot: { x: number; y: number; size: number },
+  p: Palette,
+): string {
+  const pk = t.pickups[j]!;
+  const cx = g.colX(c.column);
+  const cy = g.cellY(c.row) + CELL / 2;
+  // A missing scale() pads to scale(1), so only the pile needs one.
+  const at = (dx: number, dy: number, k = 1): string =>
+    `transform:translate(${px(dx)}px,${px(dy)}px)${k === 1 ? '' : ` scale(${round(k)})`}`;
+  const hold = heldY(g, -CARRY_LIFT) - cy;
+  const toBox = g.boxX - cx;
+  const pile = at(slot.x - cx, slot.y - cy, slot.size / CELL);
+  const color = p.cell[c.level];
+
+  // The flash builds while the crab lowers onto it, then fades as it is lifted.
+  const stops: [number, string][] = [
+    [0, `${at(0, 0)};fill:${color}`],
+    [pk.arrive, `fill:${color}`],
+    [pk.grab, `${at(0, 0)};fill:#fff`],
+  ];
+  if (pk.slip) {
+    const dGrab = g.grabDepth(c.row);
+    stops.push(
+      [pk.slip.lift, at(0, heldY(g, dGrab * SLIP_HOIST) - cy)],
+      [pk.slip.fall, `${at(0, 0)};fill:${color}`],
+      [pk.slip.regrab, `${at(0, 0)};fill:#fff`],
+    );
+  }
+  stops.push(
+    [pk.lift, `${at(0, hold)};fill:${color}`],
+    [pk.boxArrive, at(toBox, hold)],
+    [pk.drop, at(toBox, heldY(g, g.dropDepth) - cy)],
+    [pk.settle, pile],
+    [RESET_START, pile],
+    [100, at(0, 0)],
+  );
+  return keyframes(`hv${j}`, stops);
+}
+
+/** The HAUL score: one pre-drawn number per total, each shown for its window. */
+function scoreCounter(t: Timeline, x: number, y: number, p: Palette) {
+  const total = t.pickups.length;
+  const markup: string[] = [];
+  const frames: string[] = [];
   for (let v = 0; v <= total; v++) {
-    const a = v === 0 ? 0 : dropTimes[v - 1]!;
-    const b = v === total ? 100 : dropTimes[v]!;
-    parts.push(`<text class="hud-num n${v}" x="${x}" y="${y}">${v}</text>`);
-    numberKeyframes.push(numberFrames(v, a, b));
-    numberRules.push(`.n${v}{animation:n${v} ${dur}s linear infinite}`);
+    const from = v === 0 ? 0 : t.pickups[v - 1]!.settle;
+    const to = v === total ? 100 : t.pickups[v]!.settle;
+    markup.push(`<text class="digits n n${v}" x="${x}" y="${round(y)}" fill="${p.accent}">${v}</text>`);
+    const stops: [number, string][] =
+      v === 0 ? [[0, 'opacity:1']] : [[0, 'opacity:0'], [from, 'opacity:1']];
+    if (to < 100) stops.push([to, 'opacity:0']);
+    frames.push(keyframes(`n${v}`, stops));
   }
-  return { counter: parts.join(''), numberRules, numberKeyframes };
+  return {
+    markup: markup.join(''),
+    css: (dur: string) =>
+      `.n{opacity:0}` +
+      Array.from({ length: total + 1 }, (_, v) => `.n${v}{animation:n${v} ${dur} step-end infinite}`).join('') +
+      frames.join(''),
+  };
 }
 
-/** Opacity keyframes that reveal one counter digit-group during [a, b] only. */
-function numberFrames(v: number, a: number, b: number): string {
-  const eps = 0.02;
-  const stops: string[] = [];
-  if (a <= 0) {
-    stops.push('0%{opacity:1}');
-  } else {
-    stops.push('0%{opacity:0}', `${round(a - eps)}%{opacity:0}`, `${round(a)}%{opacity:1}`);
+/** A burst of confetti out of the prize box when the round is done. */
+function confettiBurst(l: Layout, p: Palette, seed: number) {
+  const rng = mulberry32(seed ^ 0xc0f);
+  const x0 = l.box.x + l.box.w / 2;
+  const y0 = l.box.y + 6;
+  const colors = [p.accent, p.bulbOn, p.cell[2], p.cell[4], p.buttonLit];
+  const markup: string[] = [];
+  const frames: string[] = [];
+  for (let i = 0; i < CONFETTI; i++) {
+    const dx = (rng() - 0.5) * 150;
+    const up = 30 + rng() * 45;
+    const spin = Math.round((rng() - 0.5) * 720);
+    markup.push(
+      `<rect class="cf cf${i}" x="${round(x0 - 2)}" y="${round(y0 - 3)}" width="4" height="6" rx="1" fill="${colors[i % colors.length]}"/>`,
+    );
+    frames.push(
+      keyframes(`cf${i}`, [
+        [0, 'opacity:0;transform:translate(0,0) rotate(0)'],
+        [SWEEP_END, 'opacity:0;transform:translate(0,0) rotate(0)'],
+        [SWEEP_END + 0.3, 'opacity:1;transform:translate(0,0) rotate(0)'],
+        [SWEEP_END + 2.2, `opacity:1;transform:translate(${round(dx * 0.6)}px,${round(-up)}px) rotate(${spin / 2}deg)`],
+        [RESET_START, `opacity:0;transform:translate(${round(dx)}px,${round(-up + 70)}px) rotate(${spin}deg)`],
+        [100, 'opacity:0;transform:translate(0,0) rotate(0)'],
+      ]),
+    );
   }
-  if (b >= 100) {
-    stops.push('100%{opacity:1}');
-  } else {
-    stops.push(`${round(b)}%{opacity:1}`, `${round(b + eps)}%{opacity:0}`, '100%{opacity:0}');
-  }
-  return `@keyframes n${v}{${stops.join('')}}`;
+  return {
+    markup: `<g class="confetti">${markup.join('')}</g>`,
+    css: (dur: string) =>
+      `.cf{opacity:0;transform-box:fill-box;transform-origin:center}` +
+      Array.from({ length: CONFETTI }, (_, i) => `.cf${i}{animation:cf${i} ${dur} linear infinite}`).join('') +
+      frames.join(''),
+  };
 }
 
-function svgOpen(width: number, height: number, label: string): string {
+function svgOpen(l: Layout, label: string): string {
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-    `viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">`
-  );
-}
-
-function brandCss(p: Palette): string {
-  return (
-    `.brand{font:600 12px ui-monospace,Menlo,Consolas,monospace;fill:${p.accent};letter-spacing:1px}` +
-    `.emoji{font-size:13px}`
-  );
-}
-
-function crabIdleCss(): string {
-  return (
-    `.crab{transform-box:fill-box;transform-origin:50% 35%;animation:crabIdle 1.6s ease-in-out infinite}` +
-    `@keyframes crabIdle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}` +
-    `.claw-l{transform-box:fill-box;transform-origin:85% 50%;animation:snipL .8s ease-in-out infinite}` +
-    `.claw-r{transform-box:fill-box;transform-origin:15% 50%;animation:snipR .8s ease-in-out infinite}` +
-    `@keyframes snipL{0%,100%{transform:rotate(0)}50%{transform:rotate(-13deg)}}` +
-    `@keyframes snipR{0%,100%{transform:rotate(0)}50%{transform:rotate(13deg)}}`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${l.width}" height="${round(l.height)}" ` +
+    `viewBox="0 0 ${l.width} ${round(l.height)}" role="img" aria-label="${label}">`
   );
 }
