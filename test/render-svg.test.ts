@@ -40,9 +40,10 @@ describe('renderSvg', () => {
     expect(svg).not.toMatch(/@import/i);
   });
 
-  it('embeds the mascot sheet once and reuses it for every pose', () => {
+  it('embeds the mascot sheet and the wordmark once each, reusing the sheet for every pose', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    expect(svg.match(/data:image\/webp;base64,/g)).toHaveLength(1);
+    expect(svg.match(/data:image\/webp;base64,/g)).toHaveLength(2);
+    expect(svg.match(/id="sheet"/g)).toHaveLength(1);
     expect(svg).toContain('href="#sheet"');
     for (const pose of ['idle', 'runLeft', 'runRight', 'jump']) {
       expect(svg).toContain(`class="pose pose-${pose}"`);
@@ -62,10 +63,18 @@ describe('renderSvg', () => {
     for (const kf of pickups) expect(kf).not.toContain('opacity:0');
   });
 
-  it('draws the arcade cabinet around the grid', () => {
+  it('draws the cabinet: ClawBox header, glass, prize box, progress bar and score', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    for (const part of ['marquee', 'glass', 'joystick', 'grab-button', 'coin-slot', 'prize-box', 'score']) {
+    for (const part of ['header', 'led', 'glass', 'prize-box', 'progress-meter', 'score']) {
       expect(svg).toContain(`class="${part}"`);
+    }
+    expect(svg).toContain('@keyframes progress');
+  });
+
+  it('has no joystick, buttons or coin slot on the deck', () => {
+    const svg = renderSvg(SAMPLE, DARK);
+    for (const gone of ['joystick', 'grab-button', 'coin-slot', 'MOVE', 'GRAB', 'INSERT COIN']) {
+      expect(svg).not.toContain(gone);
     }
   });
 
@@ -84,7 +93,7 @@ describe('renderSvg', () => {
     const empty = planSweep(gridFromLevels([[0, 0, 0, 0, 0, 0, 0]]));
     const svg = renderSvg(empty, DARK);
     expect(svg).toContain('SCANNING');
-    expect(svg).toContain('class="marquee"');
+    expect(svg).toContain('class="header"');
     expect(svg).not.toMatch(/@keyframes hv\d+/);
   });
 

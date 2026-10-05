@@ -7,19 +7,19 @@ import {
   cabinetBody,
   deckCss,
   deckMarkup,
-  deckSpots,
   defs,
   frameCss,
   glassShine,
   glassShineCss,
+  headerCss,
+  headerMarkup,
   layout,
-  marqueeCss,
-  marqueeMarkup,
   pileSlots,
   poseMarkup,
   prizeBox,
   railMarkup,
   round,
+  scoreAnchor,
   socketsMarkup,
   type Layout,
 } from './cabinet';
@@ -43,8 +43,8 @@ export interface RenderOptions {
   seed?: number;
 }
 
-const CARRY_LIFT = 6;
-const CABLE_LEN = 320; // longer than the deepest dip, cut off at the rail // the crab hoists a commit this far above its parked height
+const CARRY_LIFT = 6; // the crab hoists a commit this far above its parked height
+const CABLE_LEN = 320; // longer than the deepest dip, cut off at the rail
 const SLIP_HOIST = 0.55; // a missed grab gets this share of the way up before it falls
 const SWING = 4; // degrees the crab swings past a stop
 const CONFETTI = 18;
@@ -74,10 +74,11 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     `<rect x="-1" y="${round(l.armRest - CABLE_LEN)}" width="2" height="${CABLE_LEN}" fill="${p.hardware}"/>` +
     `<g transform="translate(${-CRAB_W / 2} ${round(l.armRest)})"><g class="squash">${pose}</g></g></g></g>`;
   const carriage =
-    `<rect x="-11" y="${l.railY - 6}" width="22" height="12" rx="3" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1"/>`;
+    `<rect x="-13" y="${l.railY - 7}" width="26" height="14" rx="4" fill="url(#chrome)"/>` +
+    `<rect x="-9" y="${l.railY - 1.5}" width="18" height="3" rx="1.5" fill="${p.accent}"/>`;
 
   const staticCss = [
-    marqueeCss(p),
+    headerCss(l),
     deckCss(),
     glassShineCss(l),
     frameCss(),
@@ -90,21 +91,23 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const frameParts = [
     defs(l, p),
     cabinetBody(l, p),
-    marqueeMarkup(l, p),
+    headerMarkup(l, p),
     glassShine(l),
     railMarkup(l, p),
     socketsMarkup(l),
     prizeBox(l, p),
-    deckMarkup(l, p, opts.date),
+    deckMarkup(l, p, plan.totalCells, opts.date),
   ];
 
   // --- Nothing to collect: the crab scans the empty grid ----------------------
+  const score = scoreAnchor(l);
   if (plan.isEmpty) {
-    const s = deckSpots(l);
     const mid = l.gridLeft + l.gridW / 2;
     const style = [
       ...staticCss,
       `.scan{font:700 12px ui-monospace,Menlo,Consolas,monospace;letter-spacing:3px;text-anchor:middle;animation:blink 1.4s steps(1) infinite}`,
+      `@keyframes blink{50%{opacity:.2}}`,
+      `.progress{transform:scaleX(0)}`,
       `.trolley{animation:scan 5s ease-in-out infinite}`,
       `@keyframes scan{0%,100%{transform:translateX(${round(l.gridLeft + 20)}px)}50%{transform:translateX(${round(l.gridLeft + l.gridW - 20)}px)}}`,
     ].join('');
@@ -113,7 +116,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
       `<style>${style}</style>`,
       ...frameParts,
       `<text x="${round(mid)}" y="${round(l.gridTop + l.gridH / 2 + 4)}" class="scan" fill="${p.textDim}">SCANNING&#8230;</text>`,
-      `<text x="${s.scoreX + 124}" y="${round(s.scoreY + 26)}" class="digits" fill="${p.accent}">0</text>`,
+      `<text x="${round(score.x)}" y="${round(score.y)}" class="digits" fill="${p.accent}">0</text>`,
       `<g class="trolley" transform="translate(${round(mid)} 0)">${crabRigAt(poseMarkup('idle', CRAB_W, 'pose shown'))}${carriage}</g>`,
       `</svg>`,
     ].join('');
@@ -140,8 +143,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   );
   const pickupKeyframes = order.map((c, j) => pickupFrames(j, c, timeline, geo, slots[j]!, p));
 
-  const s = deckSpots(l);
-  const counter = scoreCounter(timeline, s.scoreX + 124, s.scoreY + 26, p);
+  const counter = scoreCounter(timeline, score.x, score.y, p);
   const confetti = confettiBurst(l, p, seed);
 
   const style = [
@@ -150,8 +152,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     `.arm{animation:arm ${dur} ease-in-out infinite}`,
     `.swing{transform-box:view-box;transform-origin:0 ${l.railY}px;animation:swing ${dur} ease-in-out infinite}`,
     `.squash{animation:squash ${dur} linear infinite}`,
-    `.stick{transform-box:view-box;transform-origin:${s.stickX}px ${s.stickPivotY}px;animation:stick ${dur} step-end infinite}`,
-    `.grab-button{animation:button ${dur} step-end infinite}`,
+    `.progress{animation:progress ${dur} linear infinite}`,
     ...usedPoses.map((pose) => `.pose-${pose}{animation:v-${pose} ${dur} step-end infinite}`),
     ...order.map((_, j) => `.h${j}{animation:hv${j} ${dur} linear infinite}`),
     counter.css(dur),
@@ -160,8 +161,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     keyframes('arm', motion.depth.map(([t, d]) => [t, `transform:translateY(${px(d)}px)`])),
     keyframes('swing', motion.swing),
     keyframes('squash', motion.squash),
-    keyframes('stick', stickFrames(changes)),
-    keyframes('button', buttonFrames(timeline, p)),
+    keyframes('progress', progressFrames(timeline)),
     ...usedPoses.map((pose) => keyframes(`v-${pose}`, visibilityFrames(changes, pose))),
     ...pickupKeyframes,
   ].join('');
@@ -284,30 +284,15 @@ function visibilityFrames(changes: PoseChange[], pose: Pose): [number, string][]
   return stops;
 }
 
-/** The joystick leans the way the crab walks. */
-function stickFrames(changes: PoseChange[]): [number, string][] {
-  const angle = (pose: string) => (pose === 'runLeft' ? -20 : pose === 'runRight' ? 20 : 0);
-  const stops: [number, string][] = [];
-  let last: number | undefined;
-  for (const c of changes) {
-    const a = angle(c.pose);
-    if (a !== last) stops.push([c.at, `transform:rotate(${a}deg)`]);
-    last = a;
-  }
-  stops.push([100, 'transform:rotate(0deg)']);
-  return stops;
-}
-
-/** The GRAB button lights on every grab. */
-function buttonFrames(t: Timeline, p: Palette): [number, string][] {
-  const stops: [number, string][] = [[0, `fill:${p.button}`]];
-  for (const pk of t.pickups) {
-    stops.push([pk.grab, `fill:${p.buttonLit}`]);
-    if (pk.slip) stops.push([pk.slip.lift, `fill:${p.button}`], [pk.slip.regrab, `fill:${p.buttonLit}`]);
-    stops.push([pk.lift, `fill:${p.button}`]);
-  }
-  stops.push([100, `fill:${p.button}`]);
-  return stops;
+/** The deck's progress bar fills as each commit lands, and empties for the reset. */
+function progressFrames(t: Timeline): [number, string][] {
+  const total = t.pickups.length;
+  return [
+    [0, 'transform:scaleX(0)'],
+    ...t.pickups.map((pk, j): [number, string] => [pk.settle, `transform:scaleX(${round((j + 1) / total)})`]),
+    [RESET_START, 'transform:scaleX(1)'],
+    [100, 'transform:scaleX(0)'],
+  ];
 }
 
 // --- The commits ----------------------------------------------------------------
@@ -389,7 +374,7 @@ function confettiBurst(l: Layout, p: Palette, seed: number) {
   const rng = mulberry32(seed ^ 0xc0f);
   const x0 = l.box.x + l.box.w / 2;
   const y0 = l.box.y + 6;
-  const colors = [p.accent, p.bulbOn, p.cell[2], p.cell[4], p.buttonLit];
+  const colors = [p.accent, '#ffd27a', p.cell[2], p.cell[4], '#ffffff'];
   const markup: string[] = [];
   const frames: string[] = [];
   for (let i = 0; i < CONFETTI; i++) {

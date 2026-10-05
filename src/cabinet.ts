@@ -1,4 +1,4 @@
-import type { Palette } from './palette';
+import { PANEL, type Palette } from './palette';
 import {
   MASCOT_FRAME_H,
   MASCOT_FRAME_W,
@@ -6,8 +6,11 @@ import {
   MASCOT_SHEET,
   MASCOT_SHEET_H,
   MASCOT_SHEET_W,
+  WORDMARK,
+  WORDMARK_H,
+  WORDMARK_W,
   type MascotPose,
-} from './mascot-sprite';
+} from './brand-assets';
 
 export const round = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -18,8 +21,9 @@ export const PITCH = CELL + GAP;
 export const ROWS = 7;
 const OUTER = 4; // margin around the cabinet
 const SIDE = 18; // cabinet side panels
-const MARQUEE_H = 50;
-const GAP_V = 8; // between marquee, glass and deck
+const HEADER_H = 66;
+const LED_GAP = 14; // the LED light bar sits between the header and the glass
+const GAP_V = 10; // between the glass and the deck
 const GLASS_PAD_X = 14;
 const GLASS_PAD_BOTTOM = 16;
 const RAIL_DROP = 12; // rail below the top of the glass
@@ -31,7 +35,11 @@ export const HOLD = CRAB_H + 1;
 const CARRY_CLEAR = 9; // a carried commit clears the top row by this much
 const BOX_GAP = 22;
 const BOX_W = 84;
-const DECK_H = 58;
+const DECK_H = 52;
+const LOGO_H = 36;
+
+const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
 
 export interface Layout {
   width: number;
@@ -44,8 +52,9 @@ export interface Layout {
   railY: number;
   /** Crab's top edge when parked; every dip is measured from here. */
   armRest: number;
+  header: Rect;
+  ledY: number;
   glass: Rect;
-  marquee: Rect;
   deck: Rect;
   box: Rect;
 }
@@ -59,8 +68,8 @@ interface Rect {
 
 export function layout(cols: number): Layout {
   const cabX = OUTER;
-  const marquee = { x: cabX + SIDE, y: OUTER + 8, w: 0, h: MARQUEE_H };
-  const glassTop = marquee.y + MARQUEE_H + GAP_V;
+  const header = { x: cabX + SIDE, y: OUTER + 10, w: 0, h: HEADER_H };
+  const glassTop = header.y + HEADER_H + LED_GAP;
   const railY = glassTop + RAIL_DROP;
   const armRest = railY + CABLE_MIN;
   const gridTop = armRest + HOLD + CARRY_CLEAR;
@@ -75,10 +84,10 @@ export function layout(cols: number): Layout {
     w: glassRight - (cabX + SIDE),
     h: box.y + box.h + GLASS_PAD_BOTTOM - glassTop,
   };
-  marquee.w = glass.w;
+  header.w = glass.w;
   const deck = { x: glass.x, y: glass.y + glass.h + GAP_V, w: glass.w, h: DECK_H };
   const cabW = glassRight + SIDE - cabX;
-  const cabH = deck.y + DECK_H + 10 - OUTER;
+  const cabH = deck.y + DECK_H + 12 - OUTER;
   return {
     width: cabX + cabW + OUTER,
     height: OUTER + cabH + OUTER,
@@ -89,38 +98,59 @@ export function layout(cols: number): Layout {
     gridH,
     railY,
     armRest,
+    header,
+    ledY: header.y + HEADER_H + LED_GAP / 2 - 1.5,
     glass,
-    marquee,
     deck,
     box,
   };
 }
 
-/** Deck positions the animation needs too (the joystick tilts, the button lights). */
+/** Deck positions the animation needs too (the progress bar fills, the score counts). */
 export function deckSpots(l: Layout) {
-  const stickX = l.deck.x + 38;
+  const scoreW = 134;
+  const scoreX = l.deck.x + l.deck.w - scoreW - 14;
+  const barX = l.deck.x + 150;
   return {
-    stickX,
-    stickPivotY: l.deck.y + 38,
-    buttonX: stickX + 50,
-    buttonY: l.deck.y + 30,
-    scoreX: l.box.x - 156,
-    scoreY: l.deck.y + 12,
+    scoreX,
+    scoreY: l.deck.y + 9,
+    scoreW,
+    barX,
+    barY: l.deck.y + 30,
+    barW: Math.max(40, scoreX - 28 - barX),
   };
 }
 
 // --- Static parts --------------------------------------------------------------
 
-/** The sprite sheet, embedded once and reused by every pose through <use>. */
+/** Sprite sheet, gradients and filters, defined once and referenced everywhere. */
 export function defs(l: Layout, p: Palette): string {
+  const dark = p.name === 'dark';
+  const v = (id: string, stops: [number, string, number?][]) =>
+    `<linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">` +
+    stops.map(([o, c, a]) => `<stop offset="${o}" stop-color="${c}"${a === undefined ? '' : ` stop-opacity="${a}"`}/>`).join('') +
+    `</linearGradient>`;
+  const h = (id: string, stops: [number, string, number?][]) =>
+    v(id, stops).replace('x2="0" y1="0" y2="1"', 'x2="1" y1="0" y2="0"');
   return (
     `<defs>` +
     `<image id="sheet" href="${MASCOT_SHEET}" width="${MASCOT_SHEET_W}" height="${MASCOT_SHEET_H}"/>` +
-    `<clipPath id="glassClip"><rect x="${l.glass.x}" y="${l.glass.y}" width="${l.glass.w}" height="${l.glass.h}" rx="6"/></clipPath>` +
-    `<linearGradient id="shine" x1="0" x2="1" y1="0" y2="0">` +
-    `<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity="${p.name === 'dark' ? 0.07 : 0.35}"/>` +
-    `<stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
-    `<filter id="glow" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="2.4"/></filter>` +
+    v('body', [[0, p.cabinet], [1, p.cabinetEdge]]) +
+    v('chrome', [[0, '#f5f7fa'], [0.42, '#a3acb9'], [0.5, '#5f6a7a'], [1, '#d9dee5']]) +
+    // Panel edges: the same metal, darker, so a border reads as trim rather than an outline.
+    v('trim', dark
+      ? [[0, '#8d97a6'], [0.5, '#3a4351'], [1, '#6b7584']]
+      : [[0, '#d5dae1'], [0.5, '#9aa3af'], [1, '#c3c9d1']]) +
+    v('panel', [[0, PANEL.top], [1, PANEL.bottom]]) +
+    v('depth', [[0, '#000', dark ? 0.35 : 0.08], [1, '#000', 0]]) +
+    v('acrylic', [[0, '#fff', dark ? 0.1 : 0.5], [1, '#fff', 0]]) +
+    h('fadeL', [[0, p.accent, 0], [1, p.accent, 0.8]]) +
+    h('fadeR', [[0, p.accent, 0.8], [1, p.accent, 0]]) +
+    h('sweep', [[0, '#fff', 0], [0.5, '#fff', 0.95], [1, '#fff', 0]]) +
+    h('shine', [[0, '#fff', 0], [0.5, '#fff', dark ? 0.07 : 0.35], [1, '#fff', 0]]) +
+    `<filter id="glow" x="-10%" y="-200%" width="120%" height="500%"><feGaussianBlur stdDeviation="3"/></filter>` +
+    `<clipPath id="glassClip"><rect x="${l.glass.x}" y="${l.glass.y}" width="${l.glass.w}" height="${l.glass.h}" rx="8"/></clipPath>` +
+    `<clipPath id="ledClip"><rect x="${l.header.x + 10}" y="${round(l.ledY)}" width="${l.header.w - 20}" height="3"/></clipPath>` +
     // One tile per day: far smaller than a rect per socket.
     `<pattern id="sockets" x="${l.gridLeft}" y="${round(l.gridTop)}" width="${PITCH}" height="${PITCH}" patternUnits="userSpaceOnUse">` +
     `<rect width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[0]}"/></pattern>` +
@@ -172,49 +202,53 @@ export function poseMarkup(
 
 export function cabinetBody(l: Layout, p: Palette): string {
   const { glass, deck } = l;
+  const stripY = glass.y;
+  const stripH = deck.y + deck.h - glass.y;
+  const strip = (x: number) =>
+    `<rect x="${x}" y="${stripY}" width="3" height="${stripH}" rx="1.5" fill="${p.accent}" filter="url(#glow)" opacity=".8"/>` +
+    `<rect x="${x}" y="${stripY}" width="3" height="${stripH}" rx="1.5" fill="${p.accent}"/>`;
   return (
-    `<rect class="cabinet" x="4" y="4" width="${l.width - 8}" height="${l.height - 8}" rx="16" fill="${p.cabinet}" stroke="${p.cabinetEdge}" stroke-width="2"/>` +
-    // Side trim: a stripe of the accent down each panel.
-    `<rect x="11" y="${glass.y}" width="4" height="${deck.y + deck.h - glass.y}" rx="2" fill="${p.accent}" opacity=".85"/>` +
-    `<rect x="${l.width - 15}" y="${glass.y}" width="4" height="${deck.y + deck.h - glass.y}" rx="2" fill="${p.accent}" opacity=".85"/>` +
-    `<rect class="glass" x="${glass.x}" y="${glass.y}" width="${glass.w}" height="${glass.h}" rx="6" fill="${p.glass}" stroke="${p.cabinetEdge}" stroke-width="2"/>`
+    `<rect class="cabinet" x="4" y="4" width="${l.width - 8}" height="${round(l.height - 8)}" rx="18" fill="url(#body)" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<rect x="7" y="7" width="${l.width - 14}" height="${round(l.height - 14)}" rx="15" fill="none" stroke="#fff" stroke-opacity=".08"/>` +
+    // LED strips down both sides.
+    strip(11) +
+    strip(l.width - 14) +
+    `<rect class="glass" x="${glass.x}" y="${glass.y}" width="${glass.w}" height="${glass.h}" rx="8" fill="${p.glass}" stroke="url(#trim)" stroke-width="1.5"/>` +
+    // Depth: the glass is set into the cabinet.
+    `<rect x="${glass.x + 1}" y="${glass.y + 1}" width="${glass.w - 2}" height="22" rx="7" fill="url(#depth)"/>`
   );
 }
 
-/** The lit sign on top: title, two idle crabs, and chasing bulbs around the edge. */
-export function marqueeMarkup(l: Layout, p: Palette): string {
-  const m = l.marquee;
+/** The header: the ClawBox wordmark on a dark glass panel, with an LED light bar under it. */
+export function headerMarkup(l: Layout, p: Palette): string {
+  const m = l.header;
   const cx = m.x + m.w / 2;
-  const bulbs: string[] = [];
-  const step = 16;
-  const n = Math.max(2, Math.floor((m.w - 16) / step));
-  const x0 = m.x + (m.w - (n - 1) * step) / 2;
-  for (let i = 0; i < n; i++) {
-    const x = x0 + i * step;
-    bulbs.push(`<circle class="b b${i % 3}" cx="${round(x)}" cy="${m.y + 5}" r="2.2"/>`);
-    bulbs.push(`<circle class="b b${(i + 1) % 3}" cx="${round(x)}" cy="${m.y + m.h - 5}" r="2.2"/>`);
-  }
-  const crabW = 30;
-  const crabY = m.y + (m.h - (crabW * MASCOT_FRAME_H) / MASCOT_FRAME_W) / 2;
-  const title = `x="${round(cx)}" y="${m.y + m.h / 2 + 9}" class="title"`;
+  const logoW = (LOGO_H * WORDMARK_W) / WORDMARK_H;
+  const logoY = m.y + 9;
+  const lineY = logoY + LOGO_H / 2;
+  const lineW = Math.min(220, m.w / 2 - logoW / 2 - 40);
   return (
-    `<g class="marquee">` +
-    `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="8" fill="${p.marquee}" stroke="${p.accentDark}" stroke-width="2"/>` +
-    bulbs.join('') +
-    `<text ${title} fill="${p.accent}" filter="url(#glow)" opacity=".8">CLAWBOX</text>` +
-    `<text ${title} fill="${p.accent}">CLAWBOX</text>` +
-    `<g transform="translate(${round(cx - 128 - crabW)} ${round(crabY)})">${poseMarkup('idle', crabW, 'mascot')}</g>` +
-    `<g transform="translate(${round(cx + 128)} ${round(crabY)})">${poseMarkup('idle', crabW, 'mascot')}</g>` +
+    `<g class="header">` +
+    `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="12" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<rect x="${m.x + 14}" y="${m.y + 2.5}" width="${m.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".16"/>` +
+    `<rect x="${round(cx - logoW / 2 - 24 - lineW)}" y="${round(lineY)}" width="${round(lineW)}" height="1.2" fill="url(#fadeL)"/>` +
+    `<rect x="${round(cx + logoW / 2 + 24)}" y="${round(lineY)}" width="${round(lineW)}" height="1.2" fill="url(#fadeR)"/>` +
+    `<image href="${WORDMARK}" x="${round(cx - logoW / 2)}" y="${logoY}" width="${round(logoW)}" height="${LOGO_H}"/>` +
+    `<text x="${round(cx)}" y="${m.y + m.h - 9}" class="tag" fill="${PANEL.textDim}">CONTRIBUTION CATCHER</text>` +
+    `</g>` +
+    `<g class="led">` +
+    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="${p.accent}" filter="url(#glow)"/>` +
+    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="${p.accent}"/>` +
+    `<g clip-path="url(#ledClip)"><rect class="sweep" x="${m.x}" y="${round(l.ledY)}" width="140" height="3" fill="url(#sweep)"/></g>` +
     `</g>`
   );
 }
 
-export function marqueeCss(p: Palette): string {
+export function headerCss(l: Layout): string {
   return (
-    `.title{font:800 26px ui-monospace,Menlo,Consolas,monospace;letter-spacing:7px;text-anchor:middle}` +
-    `.b{fill:${p.bulbOff}}` +
-    `.b0,.b1,.b2{animation:chase 1.2s steps(1) infinite}.b1{animation-delay:-.4s}.b2{animation-delay:-.8s}` +
-    `@keyframes chase{0%{fill:${p.bulbOn}}33.3%{fill:${p.bulbOff}}}`
+    `.tag{font:600 7.5px ${SANS};letter-spacing:3.5px;text-anchor:middle}` +
+    `.sweep{animation:sweep 4.5s ease-in-out infinite}` +
+    `@keyframes sweep{0%{transform:translateX(-160px)}60%,100%{transform:translateX(${round(l.header.w + 20)}px)}}`
   );
 }
 
@@ -239,9 +273,9 @@ export function railMarkup(l: Layout, p: Palette): string {
   const x1 = l.gridLeft - 6;
   const x2 = l.box.x + l.box.w + 6;
   return (
-    `<rect x="${x1}" y="${l.railY - 2}" width="${x2 - x1}" height="4" rx="2" fill="${p.hardware}"/>` +
-    `<rect x="${x1 - 3}" y="${l.railY - 5}" width="6" height="10" rx="1.5" fill="${p.accentDark}"/>` +
-    `<rect x="${x2 - 3}" y="${l.railY - 5}" width="6" height="10" rx="1.5" fill="${p.accentDark}"/>`
+    `<rect x="${x1}" y="${l.railY - 2.5}" width="${x2 - x1}" height="5" rx="2.5" fill="url(#chrome)"/>` +
+    `<rect x="${x1 - 3}" y="${l.railY - 5}" width="6" height="10" rx="2" fill="${p.accentDark}"/>` +
+    `<rect x="${x2 - 3}" y="${l.railY - 5}" width="6" height="10" rx="2" fill="${p.accentDark}"/>`
   );
 }
 
@@ -250,15 +284,19 @@ export function socketsMarkup(l: Layout): string {
   return `<rect x="${l.gridLeft}" y="${round(l.gridTop)}" width="${l.gridW}" height="${l.gridH}" fill="url(#sockets)"/>`;
 }
 
-/** The glass prize box the commits pile up in (open at the top). */
+/** The acrylic prize box the commits pile up in (open at the top), lit from below. */
 export function prizeBox(l: Layout, p: Palette): string {
   const b = l.box;
+  const bottom = b.y + b.h;
   return (
     `<g class="prize-box">` +
-    `<rect x="${b.x}" y="${round(b.y)}" width="${b.w}" height="${round(b.h)}" rx="3" fill="${p.accent}" opacity=".07"/>` +
-    `<path d="M${b.x} ${round(b.y)} V${round(b.y + b.h)} H${b.x + b.w} V${round(b.y)}" fill="none" stroke="${p.accent}" stroke-width="2.5" stroke-linejoin="round"/>` +
-    `<rect x="${b.x - 3}" y="${round(b.y - 3)}" width="${b.w + 6}" height="4" rx="1.5" fill="${p.accent}"/>` +
-    `<text x="${b.x + b.w / 2}" y="${round(b.y + b.h + 12)}" class="label" fill="${p.textDim}">PRIZES</text>` +
+    `<rect x="${b.x}" y="${round(b.y)}" width="${b.w}" height="${round(b.h)}" rx="4" fill="${p.accent}" opacity=".06"/>` +
+    `<rect x="${b.x + 2}" y="${round(b.y)}" width="${b.w - 4}" height="${round(b.h * 0.6)}" rx="3" fill="url(#acrylic)"/>` +
+    `<path d="M${b.x} ${round(b.y)} V${round(bottom)} H${b.x + b.w} V${round(b.y)}" fill="none" stroke="${p.accent}" stroke-width="2" stroke-linejoin="round"/>` +
+    `<rect x="${b.x - 3}" y="${round(b.y - 3)}" width="${b.w + 6}" height="4" rx="2" fill="url(#chrome)"/>` +
+    `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}" filter="url(#glow)"/>` +
+    `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}"/>` +
+    `<text x="${b.x + b.w / 2}" y="${round(bottom + 14)}" class="lbl" fill="${p.textDim}">PRIZES</text>` +
     `</g>`
   );
 }
@@ -281,52 +319,44 @@ export function pileSlots(l: Layout, count: number): { x: number; y: number; siz
   });
 }
 
-export function deckMarkup(l: Layout, p: Palette, date?: string): string {
+/** The control deck: date, a progress bar that fills as commits land, and the score. */
+export function deckMarkup(l: Layout, p: Palette, total: number, date?: string): string {
   const d = l.deck;
   const s = deckSpots(l);
-  const coinX = d.x + d.w / 2 - 40;
-  const chuteX = l.box.x + 8;
+  const bar = `x="${round(s.barX)}" y="${round(s.barY)}" width="${round(s.barW)}" height="5" rx="2.5"`;
   return (
-    `<rect x="${d.x}" y="${round(d.y)}" width="${d.w}" height="${d.h}" rx="8" fill="${p.deck}" stroke="${p.cabinetEdge}" stroke-width="2"/>` +
-    // Joystick: the stick tilts with the crab; the base stays put.
-    `<ellipse cx="${s.stickX}" cy="${round(s.stickPivotY + 4)}" rx="15" ry="5.5" fill="${p.marquee}"/>` +
-    `<g class="joystick"><g class="stick">` +
-    `<rect x="${s.stickX - 2}" y="${round(s.stickPivotY - 20)}" width="4" height="22" rx="2" fill="${p.hardware}"/>` +
-    `<circle cx="${s.stickX}" cy="${round(s.stickPivotY - 22)}" r="7" fill="${p.accent}" stroke="${p.accentDark}" stroke-width="1.5"/>` +
-    `</g></g>` +
-    `<text x="${s.stickX}" y="${round(d.y + d.h - 5)}" class="label" fill="${p.textDim}">MOVE</text>` +
-    `<circle cx="${s.buttonX}" cy="${round(s.buttonY + 2)}" r="11" fill="${p.marquee}"/>` +
-    `<circle class="grab-button" cx="${s.buttonX}" cy="${round(s.buttonY)}" r="9.5" fill="${p.button}"/>` +
-    `<text x="${s.buttonX}" y="${round(d.y + d.h - 5)}" class="label" fill="${p.textDim}">GRAB</text>` +
+    `<rect x="${d.x}" y="${round(d.y)}" width="${d.w}" height="${d.h}" rx="10" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<rect x="${d.x + 14}" y="${round(d.y + 2.5)}" width="${d.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".12"/>` +
     (date
-      ? `<text x="${s.buttonX + 44}" y="${round(d.y + 24)}" class="label start" fill="${p.textDim}">DAILY ROUND</text>` +
-        `<text x="${s.buttonX + 44}" y="${round(d.y + 40)}" class="date start" fill="${p.text}">${date}</text>`
+      ? `<text x="${d.x + 20}" y="${round(d.y + 21)}" class="lbl start" fill="${PANEL.textDim}">DAILY ROUND</text>` +
+        `<text x="${d.x + 20}" y="${round(d.y + 38)}" class="val" fill="${PANEL.text}">${date}</text>`
       : '') +
-    `<g class="coin-slot">` +
-    `<rect x="${coinX}" y="${round(d.y + 12)}" width="24" height="32" rx="4" fill="${p.marquee}"/>` +
-    `<rect x="${coinX + 10.5}" y="${round(d.y + 18)}" width="3" height="20" rx="1.5" fill="${p.accent}" class="slot"/>` +
-    `<text x="${coinX + 34}" y="${round(d.y + 32)}" class="label start blink" fill="${p.accent}">INSERT COIN</text>` +
+    `<g class="progress-meter">` +
+    `<text x="${round(s.barX)}" y="${round(s.barY - 9)}" class="lbl start" fill="${PANEL.textDim}">COLLECTED</text>` +
+    `<text x="${round(s.barX + s.barW)}" y="${round(s.barY - 9)}" class="lbl end" fill="${PANEL.textDim}">${total} THIS YEAR</text>` +
+    `<rect ${bar} fill="${PANEL.track}"/>` +
+    `<rect class="progress" ${bar} fill="${p.accent}" filter="url(#glow)"/>` +
+    `<rect class="progress" ${bar} fill="${p.accent}"/>` +
     `</g>` +
     `<g class="score">` +
-    `<rect x="${s.scoreX}" y="${round(s.scoreY)}" width="134" height="34" rx="5" fill="${p.lcd}" stroke="${p.accentDark}" stroke-width="1.5"/>` +
-    `<text x="${s.scoreX + 10}" y="${round(s.scoreY + 21)}" class="label start" fill="${p.textDim}">HAUL</text>` +
-    `<text x="${s.scoreX + 124}" y="${round(s.scoreY + 26)}" class="digits" fill="${p.bulbOff}" opacity=".3">888</text>` +
-    `</g>` +
-    `<g class="chute">` +
-    `<rect x="${chuteX}" y="${round(d.y + 10)}" width="${l.box.w - 16}" height="38" rx="4" fill="${p.marquee}"/>` +
-    `<rect x="${chuteX + 6}" y="${round(d.y + 16)}" width="${l.box.w - 28}" height="18" rx="3" fill="${p.accentDark}" opacity=".55"/>` +
-    `<text x="${chuteX + (l.box.w - 16) / 2}" y="${round(d.y + 44)}" class="label" fill="${p.accent}">PUSH</text>` +
+    `<rect x="${s.scoreX}" y="${round(s.scoreY)}" width="${s.scoreW}" height="34" rx="6" fill="#050709" stroke="url(#trim)" stroke-width="1"/>` +
+    `<text x="${s.scoreX + 12}" y="${round(s.scoreY + 21)}" class="lbl start" fill="${PANEL.textDim}">HAUL</text>` +
     `</g>`
   );
 }
 
+/** Where the score digits are drawn. */
+export function scoreAnchor(l: Layout): { x: number; y: number } {
+  const s = deckSpots(l);
+  return { x: s.scoreX + s.scoreW - 10, y: s.scoreY + 26 };
+}
+
 export function deckCss(): string {
   return (
-    `.label{font:700 8px ui-monospace,Menlo,Consolas,monospace;letter-spacing:1.5px;text-anchor:middle}` +
-    `.start{text-anchor:start}` +
-    `.date{font:600 11px ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px}` +
-    `.digits{font:800 24px ui-monospace,Menlo,Consolas,monospace;text-anchor:end;letter-spacing:2px}` +
-    `.blink{animation:blink 1.4s steps(1) infinite}@keyframes blink{50%{opacity:.15}}` +
-    `.slot{animation:slot 2s ease-in-out infinite}@keyframes slot{50%{opacity:.35}}`
+    `.lbl{font:600 7.5px ${SANS};letter-spacing:2.2px;text-anchor:middle}` +
+    `.start{text-anchor:start}.end{text-anchor:end}` +
+    `.val{font:600 13px ${SANS};letter-spacing:.5px}` +
+    `.digits{font:700 24px ${MONO};text-anchor:end;letter-spacing:2px}` +
+    `.progress{transform-box:fill-box;transform-origin:0 50%}`
   );
 }

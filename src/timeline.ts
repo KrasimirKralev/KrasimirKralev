@@ -1,5 +1,5 @@
 import { mulberry32 } from './shuffle';
-import type { MascotPose } from './mascot-sprite';
+import type { MascotPose } from './brand-assets';
 
 /** Every moment is a percentage of one animation loop. */
 export const APPROACH = 3; // the crab sets off from the box
