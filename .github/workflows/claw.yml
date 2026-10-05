@@ -1,4 +1,4 @@
-name: ClawBox claw machine
+name: Contribution invaders
 
 on:
   schedule:
@@ -17,7 +17,7 @@ permissions:
 
 # Avoid overlapping runs racing to push the output branch.
 concurrency:
-  group: claw-machine
+  group: contribution-invaders
   cancel-in-progress: true
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Generate the claw-machine SVGs
+      - name: Generate the contribution invaders SVGs
         env:
           # Default token reads the public contribution calendar. If it ever
           # comes back empty, add a CONTRIB_TOKEN PAT (read:user) and it wins.
@@ -53,7 +53,7 @@ jobs:
           git add claw-dark.svg claw-light.svg
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              commit -q -m 'chore: refresh claw machine'
+              commit -q -m 'chore: refresh contribution invaders'
           git push -f -q \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             output
