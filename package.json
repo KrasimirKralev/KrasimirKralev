@@ -1,9 +1,9 @@
 {
-  "name": "clawbox-claw-machine",
+  "name": "contribution-invaders",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Self-playing ClawBox claw-machine animation of my GitHub contribution graph",
+  "description": "My GitHub contribution graph as a self-playing Space Invaders game, starring the ClawBox crab",
   "scripts": {
     "build:svg": "tsx src/index.ts",
     "build:assets": "python3 scripts/build-brand-assets.py",
