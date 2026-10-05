@@ -42,10 +42,10 @@ for (const palette of [DARK, LIGHT]) {
 
 const pane = (theme: 'dark' | 'light', bg: string, fg: string) =>
   `<section style="background:${bg};color:${fg}"><h2>${theme}</h2>` +
-  `<img src="claw-${theme}.svg" alt="claw machine, ${theme} theme"></section>`;
+  `<img src="claw-${theme}.svg" alt="Contribution invaders, ${theme} theme"></section>`;
 writeFileSync(
   join(outDir, 'index.html'),
-  `<!doctype html><html><head><meta charset="utf-8"><title>Claw machine preview</title><style>
+  `<!doctype html><html><head><meta charset="utf-8"><title>Contribution invaders preview</title><style>
   body{margin:0;font:13px ui-monospace,monospace}
   section{padding:20px 24px}h2{margin:0 0 10px;font-size:12px;letter-spacing:1px;opacity:.7}
   img{display:block;width:100%;max-width:880px}

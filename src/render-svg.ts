@@ -48,7 +48,7 @@ import type { ContributionLevel, SweepPlan } from './types';
 export interface RenderOptions {
   /** Date shown on the deck (e.g. "2026-06-09"). */
   date?: string;
-  /** Seed for the day's firing order, missed shots and bombs. */
+  /** Seed for the day's missed shots, bombs, stars and fireworks (the firing order is fixed). */
   seed?: number;
 }
 
@@ -152,7 +152,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const { t, march, homeX } = planShots(order, l, seed);
   const dur = `${round(t.durationS)}s`;
   const g = geometry(l, march);
-  const play = playWave(order, t, g, homeX);
+  const play = playWave(order, t, g, homeX, seed);
   const changes = poseChanges(t, play.moves);
   const usedPoses = POSES.filter((pose) => changes.some((c) => c.pose === pose));
 
@@ -347,7 +347,7 @@ function geometry(l: Layout, march: MarchStep[]): Geometry {
 
 // --- Playing the wave: the ship, its laser, the saucer, the bombs ------------------
 
-function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
+function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number, seed: number) {
   const { l } = g;
   const laserTop = l.shipTop - LASER_H + 6; // leaves from between the claws
   const offTop = l.glass.y - LASER_H - 4;
@@ -458,7 +458,7 @@ function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
     ufoMarkup = `<g class="ufo"><use href="#saucer" transform="scale(${SAUCER_PX})" fill="${SCREEN.red}"/></g>`;
   }
 
-  const bombs = invaderBombs(order, t, g, track, lethal);
+  const bombs = invaderBombs(order, t, g, track, lethal, seed);
   return {
     ship,
     laser,
@@ -540,9 +540,16 @@ function shipXAt(track: [number, number][], pct: number): number {
  * standing drops a zig-zag bomb. These miss the ship (it keeps moving); the two
  * that hit it are planned in the timeline and passed in as `lethal`.
  */
-function invaderBombs(order: Commit[], t: Timeline, g: Geometry, track: [number, number][], lethal: Stop[][]) {
+function invaderBombs(
+  order: Commit[],
+  t: Timeline,
+  g: Geometry,
+  track: [number, number][],
+  lethal: Stop[][],
+  seed: number,
+) {
   const { l } = g;
-  const rng = mulberry32(0xb0b + order.length);
+  const rng = mulberry32(seed ^ 0xb0b); // the day's own bombs
   const markup: string[] = [];
   const rules: ((dur: string) => string)[] = [];
   const busy = t.deaths.map((d) => [d.start - 1, d.done] as const);

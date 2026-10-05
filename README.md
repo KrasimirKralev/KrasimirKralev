@@ -6,7 +6,7 @@
       media="(prefers-color-scheme: dark)"
       srcset="https://raw.githubusercontent.com/KrasimirKralev/KrasimirKralev/output/claw-dark.svg" />
     <img
-      alt="My GitHub contributions as space invaders: the ClawBox crab shoots down every commit of the year, one by one"
+      alt="My GitHub contribution graph as space invaders: every day I contributed is an invader and empty days are dim dots; the ClawBox crab shoots them down one by one"
       src="https://raw.githubusercontent.com/KrasimirKralev/KrasimirKralev/output/claw-light.svg" />
   </picture>
 </div>
