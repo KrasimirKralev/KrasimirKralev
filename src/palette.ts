@@ -5,18 +5,12 @@ export interface Palette {
   /** Cabinet body, top and bottom of its gradient. */
   cabinet: string;
   cabinetEdge: string;
-  /** Play area behind the glass. */
-  glass: string;
-  /** Contribution cell colors, indexed by level 0..4. */
-  cell: [string, string, string, string, string];
   /** ClawBox accent (LED strips, carriage, prize box, score). */
   accent: string;
   /** Darker accent for depth/shadow. */
   accentDark: string;
   /** Cable and rail. */
   hardware: string;
-  /** Labels on the glass. */
-  textDim: string;
 }
 
 /**
@@ -31,27 +25,34 @@ export const PANEL = {
   track: '#1c2430',
 };
 
-// GitHub's own contribution greens, so the grid reads as a real contribution graph.
+/**
+ * The play field is an arcade CRT, dark in both themes. Its grid uses GitHub's
+ * dark-theme contribution greens, so it still reads as a contribution graph.
+ */
+export const SCREEN = {
+  bg: '#07090e',
+  cell: ['#161c26', '#0e4429', '#1a7f37', '#2ea043', '#46d160'] as const,
+  phosphor: '#5cff7a',
+  white: '#eef2f6',
+  red: '#ff4d6d',
+  gold: '#ffd27a',
+  dim: '#8b949e',
+};
+
 export const DARK: Palette = {
   name: 'dark',
   cabinet: '#252e3b',
   cabinetEdge: '#121720',
-  glass: '#0f141b',
-  cell: ['#1f2632', '#0e4429', '#1a7f37', '#2ea043', '#46d160'],
   accent: '#ff7a18',
   accentDark: '#b8470a',
   hardware: '#9aa4b0',
-  textDim: '#8b949e',
 };
 
 export const LIGHT: Palette = {
   name: 'light',
   cabinet: '#fdfdfe',
   cabinetEdge: '#dfe3e9',
-  glass: '#ffffff',
-  cell: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'],
   accent: '#ec6209',
   accentDark: '#9a3d04',
-  hardware: '#6e7781',
-  textDim: '#656d76',
+  hardware: '#9aa4b0',
 };

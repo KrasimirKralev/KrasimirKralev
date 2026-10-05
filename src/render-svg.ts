@@ -4,28 +4,34 @@ import {
   CRAB_W,
   HOLD,
   PITCH,
+  TEXT,
+  banner,
   cabinetBody,
   deckCss,
   deckMarkup,
   defs,
   frameCss,
-  glassShine,
-  glassShineCss,
   headerCss,
   headerMarkup,
+  hud,
   layout,
   pileSlots,
   poseMarkup,
   prizeBox,
   railMarkup,
   round,
-  scoreAnchor,
+  scoreDigits,
+  screenCss,
+  screenMarkup,
+  screenOverlay,
   socketsMarkup,
   type Layout,
 } from './cabinet';
-import type { Palette } from './palette';
+import { SCREEN, type Palette } from './palette';
+import { ADVANCE, glyphUse, pixelText } from './pixel-art';
 import { mulberry32, seededOrder } from './shuffle';
 import {
+  APPROACH,
   RESET_START,
   SWEEP_END,
   planTimeline,
@@ -48,6 +54,7 @@ const CABLE_LEN = 320; // longer than the deepest dip, cut off at the rail
 const SLIP_HOIST = 0.55; // a missed grab gets this share of the way up before it falls
 const SWING = 4; // degrees the crab swings past a stop
 const CONFETTI = 18;
+const CLEAR_BLINK = 0.6; // % of the loop per ROUND CLEAR! blink
 
 const POSES = ['idle', 'runLeft', 'runRight', 'jump', 'failed'] as const;
 type Pose = (typeof POSES)[number];
@@ -69,6 +76,8 @@ const keyframes = (name: string, stops: [number, string][]): string =>
 export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {}): string {
   const l = layout(plan.columns);
   const seed = opts.seed ?? 1;
+  const h = hud(l);
+  const digits = scoreDigits(plan.totalCells);
   const crabRigAt = (pose: string) =>
     `<g clip-path="url(#belowRail)"><g class="arm">` +
     `<rect x="-1" y="${round(l.armRest - CABLE_LEN)}" width="2" height="${CABLE_LEN}" fill="${p.hardware}"/>` +
@@ -80,7 +89,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const staticCss = [
     headerCss(l),
     deckCss(),
-    glassShineCss(l),
+    screenCss(l),
     frameCss(),
     `.pose{opacity:0}.shown{opacity:1}`,
     `.cell{transform-box:fill-box;transform-origin:center}`,
@@ -88,11 +97,11 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     // the sheet; pin the origin to the crab's feet in its own coordinates instead.
     `.squash{transform-box:view-box;transform-origin:${round(CRAB_W / 2)}px ${round(CRAB_H)}px}`,
   ];
-  const frameParts = [
-    defs(l, p),
+  const scene = [
+    defs(l, p, opts.date),
     cabinetBody(l, p),
     headerMarkup(l, p),
-    glassShine(l),
+    screenMarkup(l, seed),
     railMarkup(l, p),
     socketsMarkup(l),
     prizeBox(l, p),
@@ -100,13 +109,10 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   ];
 
   // --- Nothing to collect: the crab scans the empty grid ----------------------
-  const score = scoreAnchor(l);
   if (plan.isEmpty) {
     const mid = l.gridLeft + l.gridW / 2;
     const style = [
       ...staticCss,
-      `.scan{font:700 12px ui-monospace,Menlo,Consolas,monospace;letter-spacing:3px;text-anchor:middle;animation:blink 1.4s steps(1) infinite}`,
-      `@keyframes blink{50%{opacity:.2}}`,
       `.progress{transform:scaleX(0)}`,
       `.trolley{animation:scan 5s ease-in-out infinite}`,
       `@keyframes scan{0%,100%{transform:translateX(${round(l.gridLeft + 20)}px)}50%{transform:translateX(${round(l.gridLeft + l.gridW - 20)}px)}}`,
@@ -114,10 +120,11 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     return [
       svgOpen(l, 'The ClawBox crab, scanning an empty contribution grid'),
       `<style>${style}</style>`,
-      ...frameParts,
-      `<text x="${round(mid)}" y="${round(l.gridTop + l.gridH / 2 + 4)}" class="scan" fill="${p.textDim}">SCANNING&#8230;</text>`,
-      `<text x="${round(score.x)}" y="${round(score.y)}" class="digits" fill="${p.accent}">0</text>`,
+      ...scene,
+      `<g filter="url(#bloom)">${pixelText('0'.repeat(digits), h.scoreX, h.scoreY, { px: h.scorePx, fill: SCREEN.phosphor, cls: 'score' })}</g>`,
       `<g class="trolley" transform="translate(${round(mid)} 0)">${crabRigAt(poseMarkup('idle', CRAB_W, 'pose shown'))}${carriage}</g>`,
+      banner(l, TEXT.scanning, 'scanning blink', SCREEN.dim),
+      screenOverlay(l),
       `</svg>`,
     ].join('');
   }
@@ -139,11 +146,11 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const cells = order.map(
     (c, j) =>
       `<rect class="cell h${j}" x="${l.gridLeft + c.column * PITCH}" y="${round(geo.cellY(c.row))}" ` +
-      `width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[c.level]}"/>`,
+      `width="${CELL}" height="${CELL}" rx="2" fill="${SCREEN.cell[c.level]}"/>`,
   );
-  const pickupKeyframes = order.map((c, j) => pickupFrames(j, c, timeline, geo, slots[j]!, p));
+  const pickupKeyframes = order.map((c, j) => pickupFrames(j, c, timeline, geo, slots[j]!));
 
-  const counter = scoreCounter(timeline, score.x, score.y, p);
+  const counter = scoreCounter(timeline, h, digits);
   const confetti = confettiBurst(l, p, seed);
 
   const style = [
@@ -153,8 +160,11 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     `.swing{transform-box:view-box;transform-origin:0 ${l.railY}px;animation:swing ${dur} ease-in-out infinite}`,
     `.squash{animation:squash ${dur} linear infinite}`,
     `.progress{animation:progress ${dur} linear infinite}`,
+    `.ready{opacity:0;animation:ready ${dur} step-end infinite}`,
+    `.round-clear{opacity:0;animation:clear ${dur} step-end infinite}`,
     ...usedPoses.map((pose) => `.pose-${pose}{animation:v-${pose} ${dur} step-end infinite}`),
-    ...order.map((_, j) => `.h${j}{animation:hv${j} ${dur} linear infinite}`),
+    // Same easing as the crab, so a carried commit stays under its feet the whole way.
+    ...order.map((_, j) => `.h${j}{animation:hv${j} ${dur} ease-in-out infinite}`),
     counter.css(dur),
     confetti.css(dur),
     keyframes('trolley', motion.trolley),
@@ -162,6 +172,8 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     keyframes('swing', motion.swing),
     keyframes('squash', motion.squash),
     keyframes('progress', progressFrames(timeline)),
+    keyframes('ready', [[0, 'opacity:1'], [APPROACH, 'opacity:0']]),
+    keyframes('clear', clearFrames()),
     ...usedPoses.map((pose) => keyframes(`v-${pose}`, visibilityFrames(changes, pose))),
     ...pickupKeyframes,
   ].join('');
@@ -170,14 +182,30 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   return [
     svgOpen(l, `The ClawBox crab collecting ${plan.totalCells} contributions into a prize box`),
     `<style>${style}</style>`,
-    ...frameParts,
+    ...scene,
     counter.markup,
     ...cells,
     confetti.markup,
-    // The crab draws last so it stays in front of the grid as it lowers to grab.
+    // The crab draws after the grid so it stays in front as it lowers to grab.
     `<g class="trolley" transform="translate(${round(geo.boxX)} 0)"><g class="swing">${crabRigAt(crab)}</g>${carriage}</g>`,
+    banner(l, TEXT.ready, 'ready', SCREEN.white),
+    banner(l, TEXT.clear, 'round-clear', SCREEN.gold),
+    // The CRT glass goes over everything on the screen, the crab included.
+    screenOverlay(l),
     `</svg>`,
   ].join('');
+}
+
+/** ROUND CLEAR! blinks from the last commit until the reset. */
+function clearFrames(): [number, string][] {
+  const stops: [number, string][] = [[0, 'opacity:0']];
+  let on = true;
+  for (let t = SWEEP_END; t < RESET_START; t += CLEAR_BLINK) {
+    stops.push([t, `opacity:${on ? 1 : 0}`]);
+    on = !on;
+  }
+  stops.push([RESET_START, 'opacity:0']);
+  return stops;
 }
 
 // --- Geometry shared by the crab and the commits -------------------------------
@@ -308,7 +336,6 @@ function pickupFrames(
   t: Timeline,
   g: Geometry,
   slot: { x: number; y: number; size: number },
-  p: Palette,
 ): string {
   const pk = t.pickups[j]!;
   const cx = g.colX(c.column);
@@ -319,7 +346,7 @@ function pickupFrames(
   const hold = heldY(g, -CARRY_LIFT) - cy;
   const toBox = g.boxX - cx;
   const pile = at(slot.x - cx, slot.y - cy, slot.size / CELL);
-  const color = p.cell[c.level];
+  const color = SCREEN.cell[c.level];
 
   // The flash builds while the crab lowers onto it, then fades as it is lifted.
   const stops: [number, string][] = [
@@ -346,26 +373,43 @@ function pickupFrames(
   return keyframes(`hv${j}`, stops);
 }
 
-/** The HAUL score: one pre-drawn number per total, each shown for its window. */
-function scoreCounter(t: Timeline, x: number, y: number, p: Palette) {
+/**
+ * SCORE<1>, counting up as each commit lands: one glyph per digit place and
+ * value, each shown only while that place reads that digit. (SVG cannot animate
+ * text, and a pre-drawn number per total would cost far more.)
+ */
+function scoreCounter(t: Timeline, h: ReturnType<typeof hud>, digits: number) {
   const total = t.pickups.length;
-  const markup: string[] = [];
-  const frames: string[] = [];
-  for (let v = 0; v <= total; v++) {
-    const from = v === 0 ? 0 : t.pickups[v - 1]!.settle;
-    const to = v === total ? 100 : t.pickups[v]!.settle;
-    markup.push(`<text class="digits n n${v}" x="${x}" y="${round(y)}" fill="${p.accent}">${v}</text>`);
-    const stops: [number, string][] =
-      v === 0 ? [[0, 'opacity:1']] : [[0, 'opacity:0'], [from, 'opacity:1']];
-    if (to < 100) stops.push([to, 'opacity:0']);
-    frames.push(keyframes(`n${v}`, stops));
+  const startOf = [0, ...t.pickups.map((pk) => pk.settle)]; // when the score becomes v
+  const uses: string[] = [];
+  const rules: string[] = [];
+  for (let place = 0; place < digits; place++) {
+    const pow = 10 ** (digits - 1 - place);
+    const digitOf = (v: number) => Math.floor(v / pow) % 10;
+    for (let d = 0; d <= 9; d++) {
+      const stops: [number, string][] = [];
+      let shown: boolean | undefined;
+      for (let v = 0; v <= total; v++) {
+        const now = digitOf(v) === d;
+        if (now !== shown) stops.push([startOf[v]!, `opacity:${now ? 1 : 0}`]);
+        shown = now;
+      }
+      if (!stops.some(([, css]) => css === 'opacity:1')) continue; // never shows
+      const cls = `c${place}${d}`;
+      uses.push(glyphUse(String(d), place * ADVANCE, `sc ${cls}`));
+      rules.push(
+        stops.length === 1
+          ? `.${cls}{opacity:1}` // a place that never changes, like the leading zeros
+          : `.${cls}{animation:${cls} DUR step-end infinite}` +
+              keyframes(cls, [...stops, [100, `opacity:${digitOf(0) === d ? 1 : 0}`]]),
+      );
+    }
   }
   return {
-    markup: markup.join(''),
-    css: (dur: string) =>
-      `.n{opacity:0}` +
-      Array.from({ length: total + 1 }, (_, v) => `.n${v}{animation:n${v} ${dur} step-end infinite}`).join('') +
-      frames.join(''),
+    markup:
+      `<g filter="url(#bloom)"><g class="score" fill="${SCREEN.phosphor}" ` +
+      `transform="translate(${round(h.scoreX)} ${round(h.scoreY)}) scale(${h.scorePx})">${uses.join('')}</g></g>`,
+    css: (dur: string) => `.sc{opacity:0}` + rules.join('').replace(/DUR/g, dur),
   };
 }
 
@@ -374,7 +418,7 @@ function confettiBurst(l: Layout, p: Palette, seed: number) {
   const rng = mulberry32(seed ^ 0xc0f);
   const x0 = l.box.x + l.box.w / 2;
   const y0 = l.box.y + 6;
-  const colors = [p.accent, '#ffd27a', p.cell[2], p.cell[4], '#ffffff'];
+  const colors = [p.accent, SCREEN.gold, SCREEN.cell[2], SCREEN.cell[4], SCREEN.white];
   const markup: string[] = [];
   const frames: string[] = [];
   for (let i = 0; i < CONFETTI; i++) {

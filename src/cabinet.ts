@@ -1,4 +1,4 @@
-import { PANEL, type Palette } from './palette';
+import { PANEL, SCREEN, type Palette } from './palette';
 import {
   MASCOT_FRAME_H,
   MASCOT_FRAME_W,
@@ -11,6 +11,8 @@ import {
   WORDMARK_W,
   type MascotPose,
 } from './brand-assets';
+import { INVADER, SAUCER, bitmapPath, glyphDefs, pixelText, textWidth } from './pixel-art';
+import { mulberry32 } from './shuffle';
 
 export const round = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -25,7 +27,7 @@ const HEADER_H = 66;
 const LED_GAP = 14; // the LED light bar sits between the header and the glass
 const GAP_V = 10; // between the glass and the deck
 const GLASS_PAD_X = 14;
-const GLASS_PAD_BOTTOM = 16;
+const GLASS_PAD_BOTTOM = 18;
 const RAIL_DROP = 12; // rail below the top of the glass
 const CABLE_MIN = 10; // cable length with the crab parked
 export const CRAB_W = 54;
@@ -35,11 +37,24 @@ export const HOLD = CRAB_H + 1;
 const CARRY_CLEAR = 9; // a carried commit clears the top row by this much
 const BOX_GAP = 22;
 const BOX_W = 84;
-const DECK_H = 52;
-const LOGO_H = 36;
+const DECK_H = 54;
+const LOGO_H = 34;
+const INVADER_PX = 2;
+const MARCH = 18; // how far a formation steps across before it turns back
+const STARS = 70;
 
-const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
-const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+/** Every string drawn in the pixel font, so only the glyphs in use are embedded. */
+export const TEXT = {
+  tagline: 'CONTRIBUTION CATCHER',
+  score: 'SCORE<1>',
+  hiScore: 'HI-SCORE',
+  round: 'ROUND',
+  collected: 'COLLECTED',
+  prizes: 'PRIZES',
+  ready: 'READY!',
+  clear: 'ROUND CLEAR!',
+  scanning: 'SCANNING...',
+};
 
 export interface Layout {
   width: number;
@@ -106,25 +121,28 @@ export function layout(cols: number): Layout {
   };
 }
 
-/** Deck positions the animation needs too (the progress bar fills, the score counts). */
-export function deckSpots(l: Layout) {
-  const scoreW = 134;
-  const scoreX = l.deck.x + l.deck.w - scoreW - 14;
-  const barX = l.deck.x + 150;
+/** Score digits: 4 places like an arcade, more if a year ever needs them. */
+export const scoreDigits = (total: number): number => Math.max(4, String(total).length);
+const SCORE_PX = 2.6;
+const LABEL_PX = 1.4;
+
+/** Where the HUD's live parts sit (the score counts up, the bar fills). */
+export function hud(l: Layout) {
+  const d = l.deck;
   return {
-    scoreX,
-    scoreY: l.deck.y + 9,
-    scoreW,
-    barX,
-    barY: l.deck.y + 30,
-    barW: Math.max(40, scoreX - 28 - barX),
+    scoreX: d.x + 20,
+    scoreY: d.y + 25,
+    scorePx: SCORE_PX,
+    barX: d.x + 170,
+    barY: d.y + 30,
+    barW: Math.max(40, d.w - 340),
   };
 }
 
 // --- Static parts --------------------------------------------------------------
 
-/** Sprite sheet, gradients and filters, defined once and referenced everywhere. */
-export function defs(l: Layout, p: Palette): string {
+/** Sprite sheet, glyphs, gradients and filters, defined once and referenced everywhere. */
+export function defs(l: Layout, p: Palette, date?: string): string {
   const dark = p.name === 'dark';
   const v = (id: string, stops: [number, string, number?][]) =>
     `<linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">` +
@@ -132,9 +150,14 @@ export function defs(l: Layout, p: Palette): string {
     `</linearGradient>`;
   const h = (id: string, stops: [number, string, number?][]) =>
     v(id, stops).replace('x2="0" y1="0" y2="1"', 'x2="1" y1="0" y2="0"');
+  const clip = (id: string, r: Rect, rx: number) =>
+    `<clipPath id="${id}"><rect x="${r.x}" y="${round(r.y)}" width="${r.w}" height="${round(r.h)}" rx="${rx}"/></clipPath>`;
   return (
     `<defs>` +
     `<image id="sheet" href="${MASCOT_SHEET}" width="${MASCOT_SHEET_W}" height="${MASCOT_SHEET_H}"/>` +
+    glyphDefs([...Object.values(TEXT), '0123456789', date ?? '']) +
+    `<path id="invA" d="${bitmapPath(INVADER.a)}"/><path id="invB" d="${bitmapPath(INVADER.b)}"/>` +
+    `<path id="saucer" d="${bitmapPath(SAUCER.rows)}"/>` +
     v('body', [[0, p.cabinet], [1, p.cabinetEdge]]) +
     v('chrome', [[0, '#f5f7fa'], [0.42, '#a3acb9'], [0.5, '#5f6a7a'], [1, '#d9dee5']]) +
     // Panel edges: the same metal, darker, so a border reads as trim rather than an outline.
@@ -142,18 +165,23 @@ export function defs(l: Layout, p: Palette): string {
       ? [[0, '#8d97a6'], [0.5, '#3a4351'], [1, '#6b7584']]
       : [[0, '#d5dae1'], [0.5, '#9aa3af'], [1, '#c3c9d1']]) +
     v('panel', [[0, PANEL.top], [1, PANEL.bottom]]) +
-    v('depth', [[0, '#000', dark ? 0.35 : 0.08], [1, '#000', 0]]) +
-    v('acrylic', [[0, '#fff', dark ? 0.1 : 0.5], [1, '#fff', 0]]) +
-    h('fadeL', [[0, p.accent, 0], [1, p.accent, 0.8]]) +
-    h('fadeR', [[0, p.accent, 0.8], [1, p.accent, 0]]) +
+    v('acrylic', [[0, '#fff', 0.1], [1, '#fff', 0]]) +
     h('sweep', [[0, '#fff', 0], [0.5, '#fff', 0.95], [1, '#fff', 0]]) +
-    h('shine', [[0, '#fff', 0], [0.5, '#fff', dark ? 0.07 : 0.35], [1, '#fff', 0]]) +
+    h('shine', [[0, '#fff', 0], [0.5, '#fff', 0.06], [1, '#fff', 0]]) +
+    `<radialGradient id="vignette" cx=".5" cy=".5" r=".75"><stop offset=".55" stop-color="#000" stop-opacity="0"/>` +
+    `<stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>` +
     `<filter id="glow" x="-10%" y="-200%" width="120%" height="500%"><feGaussianBlur stdDeviation="3"/></filter>` +
-    `<clipPath id="glassClip"><rect x="${l.glass.x}" y="${l.glass.y}" width="${l.glass.w}" height="${l.glass.h}" rx="8"/></clipPath>` +
+    // CRT bloom for pixel text: a soft copy under the sharp one.
+    `<filter id="bloom" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="1.4" result="b"/>` +
+    `<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>` +
+    `<pattern id="scanlines" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" fill="#000" opacity=".32"/></pattern>` +
+    `<pattern id="segments" x="${round(hud(l).barX)}" width="7" height="8" patternUnits="userSpaceOnUse"><rect x="5" width="2" height="8" fill="${PANEL.bottom}"/></pattern>` +
+    clip('glassClip', l.glass, 8) +
+    clip('headerClip', l.header, 12) +
     `<clipPath id="ledClip"><rect x="${l.header.x + 10}" y="${round(l.ledY)}" width="${l.header.w - 20}" height="3"/></clipPath>` +
     // One tile per day: far smaller than a rect per socket.
     `<pattern id="sockets" x="${l.gridLeft}" y="${round(l.gridTop)}" width="${PITCH}" height="${PITCH}" patternUnits="userSpaceOnUse">` +
-    `<rect width="${CELL}" height="${CELL}" rx="2" fill="${p.cell[0]}"/></pattern>` +
+    `<rect width="${CELL}" height="${CELL}" rx="2" fill="${SCREEN.cell[0]}"/></pattern>` +
     // The cable is drawn long and cut off at the rail, so it needs no keyframes of its own.
     `<clipPath id="belowRail"><rect x="-2000" y="${l.railY}" width="4000" height="1000"/></clipPath>` +
     `</defs>`
@@ -205,36 +233,64 @@ export function cabinetBody(l: Layout, p: Palette): string {
   const stripY = glass.y;
   const stripH = deck.y + deck.h - glass.y;
   const strip = (x: number) =>
-    `<rect x="${x}" y="${stripY}" width="3" height="${stripH}" rx="1.5" fill="${p.accent}" filter="url(#glow)" opacity=".8"/>` +
-    `<rect x="${x}" y="${stripY}" width="3" height="${stripH}" rx="1.5" fill="${p.accent}"/>`;
+    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="${p.accent}" filter="url(#glow)" opacity=".8"/>` +
+    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="${p.accent}"/>`;
   return (
     `<rect class="cabinet" x="4" y="4" width="${l.width - 8}" height="${round(l.height - 8)}" rx="18" fill="url(#body)" stroke="url(#trim)" stroke-width="1.5"/>` +
     `<rect x="7" y="7" width="${l.width - 14}" height="${round(l.height - 14)}" rx="15" fill="none" stroke="#fff" stroke-opacity=".08"/>` +
     // LED strips down both sides.
     strip(11) +
-    strip(l.width - 14) +
-    `<rect class="glass" x="${glass.x}" y="${glass.y}" width="${glass.w}" height="${glass.h}" rx="8" fill="${p.glass}" stroke="url(#trim)" stroke-width="1.5"/>` +
-    // Depth: the glass is set into the cabinet.
-    `<rect x="${glass.x + 1}" y="${glass.y + 1}" width="${glass.w - 2}" height="22" rx="7" fill="url(#depth)"/>`
+    strip(l.width - 14)
   );
 }
 
-/** The header: the ClawBox wordmark on a dark glass panel, with an LED light bar under it. */
+const invaderCellW = INVADER.w * INVADER_PX + 8;
+const formationWidth = (cols: number): number => cols * invaderCellW - 8;
+
+/** A formation of pixel crab invaders: two frames, swapped as it marches. */
+function formation(x: number, y: number, cols: number, rows: number, colors: string[]): string {
+  const cellH = INVADER.h * INVADER_PX + 6;
+  const frame = (id: string, cls: string) =>
+    `<g class="${cls}">` +
+    Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: cols }, (_, c) =>
+        `<use href="#${id}" x="${(c * invaderCellW) / INVADER_PX}" y="${(r * cellH) / INVADER_PX}" fill="${colors[r % colors.length]}"/>`,
+      ).join(''),
+    ).join('') +
+    `</g>`;
+  return (
+    `<g class="march"><g transform="translate(${round(x)} ${round(y)}) scale(${INVADER_PX})">` +
+    frame('invA', 'fa') +
+    frame('invB', 'fb') +
+    `</g></g>`
+  );
+}
+
+/** The header: the ClawBox wordmark between two marching invader formations, an
+ *  occasional mystery saucer, CRT scanlines, and an LED light bar under it all. */
 export function headerMarkup(l: Layout, p: Palette): string {
   const m = l.header;
   const cx = m.x + m.w / 2;
   const logoW = (LOGO_H * WORDMARK_W) / WORDMARK_H;
-  const logoY = m.y + 9;
-  const lineY = logoY + LOGO_H / 2;
-  const lineW = Math.min(220, m.w / 2 - logoW / 2 - 40);
+  const side = (m.w - logoW) / 2; // room either side of the logo
+  const cols = Math.max(1, Math.min(5, Math.floor((side - 60) / invaderCellW)));
+  const fw = formationWidth(cols);
+  const fy = m.y + 14;
+  const leftX = m.x + side / 2 - fw / 2 - MARCH / 2;
+  const rightX = cx + logoW / 2 + side / 2 - fw / 2 - MARCH / 2;
+  const colors = [SCREEN.white, SCREEN.phosphor];
   return (
     `<g class="header">` +
     `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="12" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<g clip-path="url(#headerClip)">` +
+    formation(leftX, fy, cols, 2, colors) +
+    formation(rightX, fy, cols, 2, colors) +
+    `<g class="saucer"><use href="#saucer" transform="translate(${m.x} ${m.y + 3}) scale(1.5)" fill="${SCREEN.red}"/></g>` +
+    `<image href="${WORDMARK}" x="${round(cx - logoW / 2)}" y="${m.y + 7}" width="${round(logoW)}" height="${LOGO_H}"/>` +
+    `<g filter="url(#bloom)">${pixelText(TEXT.tagline, cx, m.y + m.h - 15, { px: 1.2, fill: SCREEN.gold, anchor: 'middle' })}</g>` +
+    `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" fill="url(#scanlines)"/>` +
+    `</g>` +
     `<rect x="${m.x + 14}" y="${m.y + 2.5}" width="${m.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".16"/>` +
-    `<rect x="${round(cx - logoW / 2 - 24 - lineW)}" y="${round(lineY)}" width="${round(lineW)}" height="1.2" fill="url(#fadeL)"/>` +
-    `<rect x="${round(cx + logoW / 2 + 24)}" y="${round(lineY)}" width="${round(lineW)}" height="1.2" fill="url(#fadeR)"/>` +
-    `<image href="${WORDMARK}" x="${round(cx - logoW / 2)}" y="${logoY}" width="${round(logoW)}" height="${LOGO_H}"/>` +
-    `<text x="${round(cx)}" y="${m.y + m.h - 9}" class="tag" fill="${PANEL.textDim}">CONTRIBUTION CATCHER</text>` +
     `</g>` +
     `<g class="led">` +
     `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="${p.accent}" filter="url(#glow)"/>` +
@@ -245,27 +301,58 @@ export function headerMarkup(l: Layout, p: Palette): string {
 }
 
 export function headerCss(l: Layout): string {
+  const m = l.header;
   return (
-    `.tag{font:600 7.5px ${SANS};letter-spacing:3.5px;text-anchor:middle}` +
+    // The classic step: the formation hops across, turns, hops back; the legs swap each hop.
+    `.march{animation:march 6s steps(9) infinite}` +
+    `@keyframes march{0%,100%{transform:translateX(0)}50%{transform:translateX(${MARCH}px)}}` +
+    `.fa,.fb{animation:flip .66s steps(1) infinite}.fb{animation-delay:-.33s}` +
+    `@keyframes flip{0%{opacity:1}50%{opacity:0}}` +
+    `.saucer{animation:saucer 17s linear infinite}` +
+    `@keyframes saucer{0%{transform:translateX(-40px)}38%,100%{transform:translateX(${round(m.w + 40)}px)}}` +
     `.sweep{animation:sweep 4.5s ease-in-out infinite}` +
-    `@keyframes sweep{0%{transform:translateX(-160px)}60%,100%{transform:translateX(${round(l.header.w + 20)}px)}}`
+    `@keyframes sweep{0%{transform:translateX(-160px)}60%,100%{transform:translateX(${round(m.w + 20)}px)}}`
   );
 }
 
-/** A slow sheen across the glass, every few seconds. */
-export function glassShine(l: Layout): string {
+/** The play field: a dark CRT with twinkling stars and the green ground line. */
+export function screenMarkup(l: Layout, seed: number): string {
+  const g = l.glass;
+  const rng = mulberry32(seed ^ 0x57a5);
+  const stars = Array.from({ length: STARS }, (_, i) => {
+    const x = g.x + 6 + rng() * (g.w - 12);
+    const y = g.y + 6 + rng() * (g.h - 12);
+    const s = rng() < 0.2 ? 2 : 1.2;
+    return `<rect class="star s${i % 3}" x="${round(x)}" y="${round(y)}" width="${s}" height="${s}" fill="${SCREEN.white}"/>`;
+  }).join('');
+  const groundY = l.gridTop + l.gridH + 9;
+  return (
+    `<rect class="glass" x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" rx="8" fill="${SCREEN.bg}" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<g clip-path="url(#glassClip)">${stars}` +
+    `<rect class="ground" x="${g.x + 10}" y="${round(groundY)}" width="${round(l.box.x - 14 - g.x)}" height="2" fill="${SCREEN.phosphor}" opacity=".85"/>` +
+    `</g>`
+  );
+}
+
+/** Drawn over everything on the screen: scanlines, vignette and a slow sheen. */
+export function screenOverlay(l: Layout): string {
   const g = l.glass;
   return (
-    `<g clip-path="url(#glassClip)"><g class="shine">` +
-    `<polygon points="${g.x},${g.y + g.h} ${g.x + 60},${g.y} ${g.x + 130},${g.y} ${g.x + 70},${g.y + g.h}" fill="url(#shine)"/>` +
-    `</g></g>`
+    `<g clip-path="url(#glassClip)" class="crt">` +
+    `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" fill="url(#scanlines)"/>` +
+    `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" fill="url(#vignette)"/>` +
+    `<g class="shine"><polygon points="${g.x},${round(g.y + g.h)} ${g.x + 60},${g.y} ${g.x + 130},${g.y} ${g.x + 70},${round(g.y + g.h)}" fill="url(#shine)"/></g>` +
+    `</g>`
   );
 }
 
-export function glassShineCss(l: Layout): string {
+export function screenCss(l: Layout): string {
   return (
+    `.star{animation:twinkle 3.2s steps(1) infinite}.s1{animation-delay:-1.1s}.s2{animation-delay:-2.2s}` +
+    `@keyframes twinkle{0%{opacity:.9}40%{opacity:.25}70%{opacity:.6}}` +
     `.shine{animation:shine 9s ease-in-out infinite}` +
-    `@keyframes shine{0%{transform:translateX(-160px)}55%,100%{transform:translateX(${round(l.glass.w + 40)}px)}}`
+    `@keyframes shine{0%{transform:translateX(-160px)}55%,100%{transform:translateX(${round(l.glass.w + 40)}px)}}` +
+    `.blink{animation:blink 1.2s steps(1) infinite}@keyframes blink{50%{opacity:.15}}`
   );
 }
 
@@ -290,13 +377,13 @@ export function prizeBox(l: Layout, p: Palette): string {
   const bottom = b.y + b.h;
   return (
     `<g class="prize-box">` +
-    `<rect x="${b.x}" y="${round(b.y)}" width="${b.w}" height="${round(b.h)}" rx="4" fill="${p.accent}" opacity=".06"/>` +
+    `<rect x="${b.x}" y="${round(b.y)}" width="${b.w}" height="${round(b.h)}" rx="4" fill="${p.accent}" opacity=".07"/>` +
     `<rect x="${b.x + 2}" y="${round(b.y)}" width="${b.w - 4}" height="${round(b.h * 0.6)}" rx="3" fill="url(#acrylic)"/>` +
     `<path d="M${b.x} ${round(b.y)} V${round(bottom)} H${b.x + b.w} V${round(b.y)}" fill="none" stroke="${p.accent}" stroke-width="2" stroke-linejoin="round"/>` +
     `<rect x="${b.x - 3}" y="${round(b.y - 3)}" width="${b.w + 6}" height="4" rx="2" fill="url(#chrome)"/>` +
     `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}" filter="url(#glow)"/>` +
     `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}"/>` +
-    `<text x="${b.x + b.w / 2}" y="${round(bottom + 14)}" class="lbl" fill="${p.textDim}">PRIZES</text>` +
+    pixelText(TEXT.prizes, b.x + b.w / 2, bottom + 8, { px: 1.1, fill: SCREEN.dim, anchor: 'middle' }) +
     `</g>`
   );
 }
@@ -319,44 +406,48 @@ export function pileSlots(l: Layout, count: number): { x: number; y: number; siz
   });
 }
 
-/** The control deck: date, a progress bar that fills as commits land, and the score. */
-export function deckMarkup(l: Layout, p: Palette, total: number, date?: string): string {
-  const d = l.deck;
-  const s = deckSpots(l);
-  const bar = `x="${round(s.barX)}" y="${round(s.barY)}" width="${round(s.barW)}" height="5" rx="2.5"`;
+/** Big centered pixel text over the play field, on a dark plate (READY!, ROUND CLEAR!). */
+export function banner(l: Layout, text: string, cls: string, fill: string): string {
+  const px = 3;
+  const cx = l.gridLeft + l.gridW / 2;
+  const cy = l.gridTop + l.gridH / 2;
+  const w = textWidth(text, px);
+  const h = 7 * px;
   return (
-    `<rect x="${d.x}" y="${round(d.y)}" width="${d.w}" height="${d.h}" rx="10" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
-    `<rect x="${d.x + 14}" y="${round(d.y + 2.5)}" width="${d.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".12"/>` +
-    (date
-      ? `<text x="${d.x + 20}" y="${round(d.y + 21)}" class="lbl start" fill="${PANEL.textDim}">DAILY ROUND</text>` +
-        `<text x="${d.x + 20}" y="${round(d.y + 38)}" class="val" fill="${PANEL.text}">${date}</text>`
-      : '') +
-    `<g class="progress-meter">` +
-    `<text x="${round(s.barX)}" y="${round(s.barY - 9)}" class="lbl start" fill="${PANEL.textDim}">COLLECTED</text>` +
-    `<text x="${round(s.barX + s.barW)}" y="${round(s.barY - 9)}" class="lbl end" fill="${PANEL.textDim}">${total} THIS YEAR</text>` +
-    `<rect ${bar} fill="${PANEL.track}"/>` +
-    `<rect class="progress" ${bar} fill="${p.accent}" filter="url(#glow)"/>` +
-    `<rect class="progress" ${bar} fill="${p.accent}"/>` +
-    `</g>` +
-    `<g class="score">` +
-    `<rect x="${s.scoreX}" y="${round(s.scoreY)}" width="${s.scoreW}" height="34" rx="6" fill="#050709" stroke="url(#trim)" stroke-width="1"/>` +
-    `<text x="${s.scoreX + 12}" y="${round(s.scoreY + 21)}" class="lbl start" fill="${PANEL.textDim}">HAUL</text>` +
+    `<g class="${cls}">` +
+    `<rect x="${round(cx - w / 2 - 14)}" y="${round(cy - h / 2 - 10)}" width="${round(w + 28)}" height="${h + 20}" rx="4" fill="${SCREEN.bg}" opacity=".85"/>` +
+    `<g filter="url(#bloom)">${pixelText(text, cx, cy - h / 2, { px, fill, anchor: 'middle' })}</g>` +
     `</g>`
   );
 }
 
-/** Where the score digits are drawn. */
-export function scoreAnchor(l: Layout): { x: number; y: number } {
-  const s = deckSpots(l);
-  return { x: s.scoreX + s.scoreW - 10, y: s.scoreY + 26 };
+/** The arcade HUD: SCORE<1> (live, drawn by the renderer), the round and a segmented
+ *  progress bar, and the HI-SCORE: this year's total. */
+export function deckMarkup(l: Layout, p: Palette, total: number, date?: string): string {
+  const d = l.deck;
+  const s = hud(l);
+  const right = d.x + d.w - 20;
+  const bar = `x="${round(s.barX)}" y="${round(s.barY)}" width="${round(s.barW)}" height="8" rx="1"`;
+  const hi = String(total).padStart(scoreDigits(total), '0');
+  return (
+    `<rect x="${d.x}" y="${round(d.y)}" width="${d.w}" height="${d.h}" rx="10" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
+    `<rect x="${d.x + 14}" y="${round(d.y + 2.5)}" width="${d.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".12"/>` +
+    `<g class="hud" filter="url(#bloom)">` +
+    pixelText(TEXT.score, s.scoreX, d.y + 11, { px: LABEL_PX, fill: SCREEN.white }) +
+    pixelText(TEXT.hiScore, right, d.y + 11, { px: LABEL_PX, fill: SCREEN.white, anchor: 'end' }) +
+    pixelText(hi, right, s.scoreY, { px: SCORE_PX, fill: SCREEN.white, anchor: 'end' }) +
+    pixelText(date ? `${TEXT.round} ${date}` : TEXT.round, s.barX, d.y + 14, { px: LABEL_PX, fill: SCREEN.dim }) +
+    pixelText(TEXT.collected, s.barX + s.barW, d.y + 14, { px: LABEL_PX, fill: SCREEN.dim, anchor: 'end' }) +
+    `</g>` +
+    `<g class="progress-meter">` +
+    `<rect ${bar} fill="${PANEL.track}"/>` +
+    `<rect class="progress" ${bar} fill="${p.accent}" filter="url(#glow)"/>` +
+    `<rect class="progress" ${bar} fill="${p.accent}"/>` +
+    `<rect ${bar} fill="url(#segments)"/>` +
+    `</g>`
+  );
 }
 
 export function deckCss(): string {
-  return (
-    `.lbl{font:600 7.5px ${SANS};letter-spacing:2.2px;text-anchor:middle}` +
-    `.start{text-anchor:start}.end{text-anchor:end}` +
-    `.val{font:600 13px ${SANS};letter-spacing:.5px}` +
-    `.digits{font:700 24px ${MONO};text-anchor:end;letter-spacing:2px}` +
-    `.progress{transform-box:fill-box;transform-origin:0 50%}`
-  );
+  return `.progress{transform-box:fill-box;transform-origin:0 50%}`;
 }

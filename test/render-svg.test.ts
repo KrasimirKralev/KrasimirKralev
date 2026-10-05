@@ -71,6 +71,21 @@ describe('renderSvg', () => {
     expect(svg).toContain('@keyframes progress');
   });
 
+  it('plays like an arcade: marching invaders, a saucer, a CRT screen, READY! and ROUND CLEAR!', () => {
+    const svg = renderSvg(SAMPLE, LIGHT);
+    for (const part of ['march', 'saucer', 'crt', 'ready', 'round-clear']) {
+      expect(svg).toContain(`class="${part}"`);
+    }
+    expect(svg).toContain('id="invA"');
+    expect(svg).toContain('id="invB"');
+  });
+
+  it('draws every word in the pixel font, never as <text>', () => {
+    const svg = renderSvg(SAMPLE, DARK, { date: '2026-10-05' });
+    expect(svg).not.toContain('<text');
+    expect(svg).toContain('<use href="#g48"'); // the digit 0
+  });
+
   it('has no joystick, buttons or coin slot on the deck', () => {
     const svg = renderSvg(SAMPLE, DARK);
     for (const gone of ['joystick', 'grab-button', 'coin-slot', 'MOVE', 'GRAB', 'INSERT COIN']) {
@@ -92,7 +107,7 @@ describe('renderSvg', () => {
   it('renders the idle SCANNING state for an empty grid, without pickups', () => {
     const empty = planSweep(gridFromLevels([[0, 0, 0, 0, 0, 0, 0]]));
     const svg = renderSvg(empty, DARK);
-    expect(svg).toContain('SCANNING');
+    expect(svg).toContain('class="scanning blink"');
     expect(svg).toContain('class="header"');
     expect(svg).not.toMatch(/@keyframes hv\d+/);
   });
