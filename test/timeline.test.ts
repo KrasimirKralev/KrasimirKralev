@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  MARCH_STEP,
   RESET_START,
   SWEEP_END,
   marchAt,
   pickMisses,
+  planMarch,
   planTimeline,
   poseChanges,
 } from '../src/timeline';
@@ -47,11 +47,32 @@ describe('planTimeline', () => {
     }
   });
 
-  it('fires one shot after another', () => {
-    const { shots } = planTimeline(30, 5);
-    for (let j = 1; j < shots.length; j++) {
-      expect(shots[j]!.start).toBeGreaterThanOrEqual(shots[j - 1]!.done);
+  it('plays every event one after another: shots, the saucer and the deaths', () => {
+    const t = planTimeline(141, 4);
+    const spans = [
+      ...t.shots.map((s) => [s.start, s.done]),
+      [t.bonus!.start, t.bonus!.done],
+      ...t.deaths.map((d) => [d.start, d.done]),
+    ].sort((a, b) => a[0]! - b[0]!);
+    for (let i = 1; i < spans.length; i++) expect(spans[i]![0]).toBeGreaterThanOrEqual(spans[i - 1]![1]!);
+  });
+
+  it('sends the mystery saucer mid-wave, and only in a wave big enough', () => {
+    const t = planTimeline(141, 4);
+    expect(t.bonus!.before).toBe(70);
+    expect(t.bonus!.done).toBeLessThanOrEqual(t.shots[70]!.start);
+    expect(t.bonus!.start).toBeGreaterThanOrEqual(t.shots[69]!.done);
+    expect(planTimeline(5, 4).bonus).toBeUndefined();
+  });
+
+  it('lets the invaders hit the ship twice in a big wave, never in a tiny one', () => {
+    const t = planTimeline(141, 4);
+    expect(t.deaths).toHaveLength(2);
+    for (const d of t.deaths) {
+      expect(ascending([d.start, d.impact, d.respawn, d.done])).toBe(true);
+      expect(d.start).toBeGreaterThanOrEqual(t.shots[d.after]!.done);
     }
+    expect(planTimeline(5, 4).deaths).toHaveLength(0);
   });
 
   it('misses exactly the shots picked to miss', () => {
@@ -63,27 +84,41 @@ describe('planTimeline', () => {
   it('keeps one shot readable: longer waves for more commits, within bounds', () => {
     expect(planTimeline(10, 1).durationS).toBeGreaterThanOrEqual(30);
     expect(planTimeline(141, 1).durationS).toBeGreaterThan(planTimeline(40, 1).durationS);
-    expect(planTimeline(5000, 1).durationS).toBeLessThanOrEqual(120);
+    expect(planTimeline(5000, 1).durationS).toBeLessThanOrEqual(140);
   });
 });
 
-describe('marchAt', () => {
+describe('planMarch', () => {
   it('starts home, steps sideways, and drops a row each time it turns', () => {
-    expect(marchAt(0)).toEqual({ x: 0, y: 0 });
-    expect(marchAt(MARCH_STEP).x).toBeGreaterThan(0);
-    const turned = marchAt(MARCH_STEP * 6);
-    expect(turned.y).toBeGreaterThan(0);
+    const steps = planMarch(planTimeline(141, 2));
+    expect(marchAt(steps, 0)).toEqual({ x: 0, y: 0 });
+    expect(steps[1]!.x).toBeGreaterThan(0);
+    expect(steps[6]!.y).toBeGreaterThan(0);
   });
 
-  it('holds still between steps', () => {
-    expect(marchAt(MARCH_STEP * 2.1)).toEqual(marchAt(MARCH_STEP * 2.9));
+  it('speeds up as the formation is shot down, like the arcade', () => {
+    const steps = planMarch(planTimeline(141, 2));
+    const gap = (i: number) => steps[i + 1]!.at - steps[i]!.at;
+    expect(gap(steps.length - 3)).toBeLessThan(gap(0) / 3);
+  });
+
+  it('flips the invaders’ legs on every step', () => {
+    const steps = planMarch(planTimeline(20, 2));
+    steps.forEach((s, i) => expect(s.frame).toBe(i % 2));
+  });
+
+  it('holds still between steps and goes home for the next wave', () => {
+    const steps = planMarch(planTimeline(141, 2));
+    const mid = (steps[3]!.at + steps[4]!.at) / 2;
+    expect(marchAt(steps, mid)).toEqual({ x: steps[3]!.x, y: steps[3]!.y });
+    expect(marchAt(steps, RESET_START + 1)).toEqual({ x: 0, y: 0 });
   });
 });
 
 describe('poseChanges', () => {
   it('runs the way the ship moves, jumps at the end, and runs home for the reset', () => {
     const t = planTimeline(2, 1);
-    const changes = poseChanges(t, [{ main: -1 }, { main: 1 }], 1);
+    const changes = poseChanges(t, { shots: [{ main: -1 }, { main: 1 }], home: 1 });
     expect(changes[0]).toEqual({ at: 0, pose: 'idle' });
     expect(changes).toContainEqual({ at: t.shots[0]!.start, pose: 'runLeft' });
     expect(changes).toContainEqual({ at: t.shots[1]!.start, pose: 'runRight' });
@@ -92,15 +127,20 @@ describe('poseChanges', () => {
     expect(ascending(changes.map((c) => c.at))).toBe(true);
   });
 
-  it('stays idle for a shot fired from where it stands', () => {
-    const t = planTimeline(1, 1);
-    expect(poseChanges(t, [{ main: 0 }], 0)).not.toContainEqual({ at: t.shots[0]!.start, pose: 'runLeft' });
-  });
-
   it('looks upset after a miss', () => {
     const t = planTimeline(300, 11);
     const j = t.shots.findIndex((s) => s.miss);
-    const dirs = t.shots.map((s) => ({ main: 1, miss: s.miss ? -1 : undefined }));
-    expect(poseChanges(t, dirs, 0)).toContainEqual({ at: t.shots[j]!.miss!.top, pose: 'failed' });
+    const shots = t.shots.map((s) => ({ main: 1, miss: s.miss ? -1 : undefined }));
+    expect(poseChanges(t, { shots, home: 0 })).toContainEqual({ at: t.shots[j]!.miss!.top, pose: 'failed' });
+  });
+
+  it('disappears when hit and comes back when it respawns', () => {
+    const t = planTimeline(141, 4);
+    const changes = poseChanges(t, { shots: t.shots.map(() => ({ main: 1 })), bonus: -1, home: 0 });
+    for (const d of t.deaths) {
+      expect(changes).toContainEqual({ at: d.impact, pose: 'dead' });
+      expect(changes).toContainEqual({ at: d.respawn, pose: 'idle' });
+    }
+    expect(changes).toContainEqual({ at: t.bonus!.start, pose: 'runLeft' });
   });
 });

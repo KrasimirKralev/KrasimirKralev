@@ -26,17 +26,25 @@ export const PANEL = {
 };
 
 /**
- * The play field is an arcade CRT, dark in both themes. Its grid uses GitHub's
- * dark-theme contribution greens, so it still reads as a contribution graph.
+ * The play field: a neon arcade screen, the same in both themes. Invaders are
+ * coloured by contribution level, cool to hot, and worth more the hotter they are.
  */
 export const SCREEN = {
-  bg: '#07090e',
-  cell: ['#161c26', '#0e4429', '#1a7f37', '#2ea043', '#46d160'] as const,
-  phosphor: '#5cff7a',
+  bg: '#0a0620',
+  nebulaA: '#ff2bd6',
+  nebulaB: '#2bd9ff',
+  dot: '#2c2552',
+  invader: ['', '#3ad7ff', '#4dff6a', '#ffd23a', '#ff3ea5'] as const,
+  points: [0, 10, 20, 30, 50] as const,
+  stars: ['#ffffff', '#9ff3ff', '#ffb3ec', '#fff3a3'] as const,
+  laser: '#7df9ff',
+  phosphor: '#4dff6a',
   white: '#eef2f6',
-  red: '#ff4d6d',
-  gold: '#ffd27a',
-  dim: '#8b949e',
+  red: '#ff2e63',
+  gold: '#ffd23a',
+  dim: '#a39fc9',
+  /** The neon LED gradient: ClawBox orange through pink and violet to cyan. */
+  neon: ['#ff7a18', '#ff2bd6', '#7b5cff', '#2bd9ff'] as const,
 };
 
 export const DARK: Palette = {

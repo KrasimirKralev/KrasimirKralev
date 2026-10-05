@@ -11,7 +11,7 @@ import {
   WORDMARK_W,
   type MascotPose,
 } from './brand-assets';
-import { BOOM, INVADER, SAUCER, bitmapPath, glyphDefs, pixelText, textWidth } from './pixel-art';
+import { BOMB, BOOM, INVADER, SAUCER, bitmapPath, glyphDefs, pixelText, textWidth } from './pixel-art';
 import { mulberry32 } from './shuffle';
 import { MARCH_RANGE } from './timeline';
 
@@ -32,7 +32,8 @@ const GRID_DROP = 22; // formation below the top of the screen
 const LASER_LANE = 56; // open space between the lowest the formation gets and the ship
 export const CRAB_W = 46;
 export const CRAB_H = (CRAB_W * MASCOT_FRAME_H) / MASCOT_FRAME_W;
-const DECK_H = 54;
+const DECK_H = 64;
+const LIVES_ROW = 22; // under the ground line: lives on the left, credits on the right
 const LOGO_H = 34;
 const INVADER_PX = 2;
 const MARCH = 18; // how far a formation steps across before it turns back
@@ -48,7 +49,17 @@ export const TEXT = {
   ready: 'READY!',
   clear: 'ROUND CLEAR!',
   scanning: 'SCANNING...',
+  credit: 'CREDIT 01',
+  hits: 'HITS',
+  accuracy: 'ACCURACY',
+  streak: 'BEST STREAK',
+  days: 'DAYS',
+  combo: 'COMBO X',
+  mystery: 'MYSTERY',
+  pts: 'PTS',
 };
+/** Characters drawn from data at render time (scores, dates, popups). */
+const DATA_CHARS = '0123456789+%X!-=';
 
 export interface Layout {
   width: number;
@@ -88,7 +99,7 @@ export function layout(cols: number): Layout {
     x: cabX + SIDE,
     y: glassTop,
     w: GLASS_PAD_X + gridW + MARCH_RANGE.x + GLASS_PAD_X,
-    h: groundY + 12 - glassTop,
+    h: groundY + LIVES_ROW - glassTop,
   };
   header.w = glass.w;
   const deck = { x: glass.x, y: glass.y + glass.h + GAP_V, w: glass.w, h: DECK_H };
@@ -124,15 +135,16 @@ export function hud(l: Layout) {
     scoreY: d.y + 24,
     scorePx: SCORE_PX,
     barX: d.x + 170,
-    barY: d.y + 30,
+    barY: d.y + 26,
     barW: Math.max(40, d.w - 340),
+    legendY: d.y + 42,
   };
 }
 
 // --- Static parts --------------------------------------------------------------
 
 /** Sprite sheet, glyphs, gradients and filters, defined once and referenced everywhere. */
-export function defs(l: Layout, p: Palette, date?: string): string {
+export function defs(l: Layout, p: Palette, texts: string[] = []): string {
   const dark = p.name === 'dark';
   const v = (id: string, stops: [number, string, number?][]) =>
     `<linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">` +
@@ -145,10 +157,11 @@ export function defs(l: Layout, p: Palette, date?: string): string {
   return (
     `<defs>` +
     `<image id="sheet" href="${MASCOT_SHEET}" width="${MASCOT_SHEET_W}" height="${MASCOT_SHEET_H}"/>` +
-    glyphDefs([...Object.values(TEXT), '0123456789', date ?? '']) +
+    glyphDefs([...Object.values(TEXT), DATA_CHARS, ...texts]) +
     `<g shape-rendering="crispEdges">` +
     `<path id="invA" d="${bitmapPath(INVADER.a)}"/><path id="invB" d="${bitmapPath(INVADER.b)}"/>` +
     `<path id="saucer" d="${bitmapPath(SAUCER.rows)}"/><path id="boom" d="${bitmapPath(BOOM.rows)}"/>` +
+    `<path id="bomb" d="${bitmapPath(BOMB.rows)}"/>` +
     `</g>` +
     v('body', [[0, p.cabinet], [1, p.cabinetEdge]]) +
     v('chrome', [[0, '#f5f7fa'], [0.42, '#a3acb9'], [0.5, '#5f6a7a'], [1, '#d9dee5']]) +
@@ -160,6 +173,12 @@ export function defs(l: Layout, p: Palette, date?: string): string {
     v('acrylic', [[0, '#fff', 0.1], [1, '#fff', 0]]) +
     h('sweep', [[0, '#fff', 0], [0.5, '#fff', 0.95], [1, '#fff', 0]]) +
     h('shine', [[0, '#fff', 0], [0.5, '#fff', 0.06], [1, '#fff', 0]]) +
+    h('neonH', SCREEN.neon.map((c, i) => [i / (SCREEN.neon.length - 1), c] as [number, string])) +
+    v('neonV', SCREEN.neon.map((c, i) => [i / (SCREEN.neon.length - 1), c] as [number, string])) +
+    `<radialGradient id="nebulaA" cx=".22" cy=".25" r=".45"><stop offset="0" stop-color="${SCREEN.nebulaA}" stop-opacity=".28"/>` +
+    `<stop offset="1" stop-color="${SCREEN.nebulaA}" stop-opacity="0"/></radialGradient>` +
+    `<radialGradient id="nebulaB" cx=".8" cy=".8" r=".5"><stop offset="0" stop-color="${SCREEN.nebulaB}" stop-opacity=".22"/>` +
+    `<stop offset="1" stop-color="${SCREEN.nebulaB}" stop-opacity="0"/></radialGradient>` +
     `<radialGradient id="vignette" cx=".5" cy=".5" r=".75"><stop offset=".55" stop-color="#000" stop-opacity="0"/>` +
     `<stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>` +
     `<filter id="glow" x="-10%" y="-200%" width="120%" height="500%"><feGaussianBlur stdDeviation="3"/></filter>` +
@@ -173,7 +192,7 @@ export function defs(l: Layout, p: Palette, date?: string): string {
     `<clipPath id="ledClip"><rect x="${l.header.x + 10}" y="${round(l.ledY)}" width="${l.header.w - 20}" height="3"/></clipPath>` +
     // Empty days: a dim dot per day, one pattern tile instead of a rect each.
     `<pattern id="sockets" x="${l.gridLeft}" y="${round(l.gridTop)}" width="${PITCH}" height="${PITCH}" patternUnits="userSpaceOnUse">` +
-    `<rect x="${(CELL - 3) / 2}" y="${(CELL - 3) / 2}" width="3" height="3" fill="${SCREEN.cell[0]}"/></pattern>` +
+    `<rect x="${(CELL - 3) / 2}" y="${(CELL - 3) / 2}" width="3" height="3" fill="${SCREEN.dot}"/></pattern>` +
     `</defs>`
   );
 }
@@ -223,8 +242,8 @@ export function cabinetBody(l: Layout, p: Palette): string {
   const stripY = glass.y;
   const stripH = deck.y + deck.h - glass.y;
   const strip = (x: number) =>
-    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="${p.accent}" filter="url(#glow)" opacity=".8"/>` +
-    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="${p.accent}"/>`;
+    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="url(#neonV)" filter="url(#glow)" opacity=".9"/>` +
+    `<rect x="${x}" y="${stripY}" width="3" height="${round(stripH)}" rx="1.5" fill="url(#neonV)"/>`;
   return (
     `<rect class="cabinet" x="4" y="4" width="${l.width - 8}" height="${round(l.height - 8)}" rx="18" fill="url(#body)" stroke="url(#trim)" stroke-width="1.5"/>` +
     `<rect x="7" y="7" width="${l.width - 14}" height="${round(l.height - 14)}" rx="15" fill="none" stroke="#fff" stroke-opacity=".08"/>` +
@@ -268,7 +287,7 @@ export function headerMarkup(l: Layout, p: Palette): string {
   const fy = m.y + 14;
   const leftX = m.x + side / 2 - fw / 2 - MARCH / 2;
   const rightX = cx + logoW / 2 + side / 2 - fw / 2 - MARCH / 2;
-  const colors = [SCREEN.white, SCREEN.phosphor];
+  const colors = [SCREEN.invader[4], SCREEN.invader[1]];
   return (
     `<g class="header">` +
     `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="12" fill="url(#panel)" stroke="url(#trim)" stroke-width="1.5"/>` +
@@ -283,8 +302,8 @@ export function headerMarkup(l: Layout, p: Palette): string {
     `<rect x="${m.x + 14}" y="${m.y + 2.5}" width="${m.w - 28}" height="1.2" rx=".6" fill="#fff" opacity=".16"/>` +
     `</g>` +
     `<g class="led">` +
-    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="${p.accent}" filter="url(#glow)"/>` +
-    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="${p.accent}"/>` +
+    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="url(#neonH)" filter="url(#glow)"/>` +
+    `<rect x="${m.x + 10}" y="${round(l.ledY)}" width="${m.w - 20}" height="3" rx="1.5" fill="url(#neonH)"/>` +
     `<g clip-path="url(#ledClip)"><rect class="sweep" x="${m.x}" y="${round(l.ledY)}" width="140" height="3" fill="url(#sweep)"/></g>` +
     `</g>`
   );
@@ -313,12 +332,16 @@ export function screenMarkup(l: Layout, seed: number): string {
     const x = g.x + 6 + rng() * (g.w - 12);
     const y = g.y + 6 + rng() * (g.h - 12);
     const s = rng() < 0.2 ? 2 : 1.2;
-    return `<rect class="star s${i % 3}" x="${round(x)}" y="${round(y)}" width="${s}" height="${s}" fill="${SCREEN.white}"/>`;
+    return `<rect class="star s${i % 3}" x="${round(x)}" y="${round(y)}" width="${s}" height="${s}" fill="${SCREEN.stars[i % SCREEN.stars.length]}"/>`;
   }).join('');
   return (
     `<rect class="glass" x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" rx="8" fill="${SCREEN.bg}" stroke="url(#trim)" stroke-width="1.5"/>` +
-    `<g clip-path="url(#glassClip)">${stars}` +
-    `<rect class="ground" x="${g.x + 10}" y="${round(l.groundY)}" width="${g.w - 20}" height="2" fill="${SCREEN.phosphor}" opacity=".85"/>` +
+    `<g clip-path="url(#glassClip)">` +
+    `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" fill="url(#nebulaA)"/>` +
+    `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" fill="url(#nebulaB)"/>` +
+    stars +
+    `<rect class="ground" x="${g.x + 10}" y="${round(l.groundY)}" width="${g.w - 20}" height="2" fill="${SCREEN.phosphor}" opacity=".9"/>` +
+    pixelText(TEXT.credit, g.x + g.w - 16, l.groundY + 8, { px: 1.2, fill: SCREEN.dim, anchor: 'end' }) +
     `</g>`
   );
 }
@@ -365,6 +388,34 @@ export function banner(l: Layout, text: string, cls: string, fill: string): stri
   );
 }
 
+export interface PanelLine {
+  text: string;
+  px: number;
+  fill: string;
+  cls?: string;
+}
+
+/** A centred block of pixel lines on a dark plate, over the play field (the ROUND CLEAR! stats). */
+export function panel(l: Layout, lines: PanelLine[], cls: string): string {
+  const cx = l.gridLeft + l.gridW / 2;
+  const gap = 8;
+  const height = lines.reduce((a, ln) => a + ln.px * 7, 0) + gap * (lines.length - 1);
+  const width = Math.max(...lines.map((ln) => textWidth(ln.text, ln.px)));
+  let y = l.gridTop + l.gridH / 2 - height / 2 + 10;
+  const rows = lines.map((ln) => {
+    const row = pixelText(ln.text, cx, y, { px: ln.px, fill: ln.fill, anchor: 'middle', cls: ln.cls });
+    y += ln.px * 7 + gap;
+    return row;
+  });
+  return (
+    `<g class="${cls}">` +
+    `<rect x="${round(cx - width / 2 - 22)}" y="${round(l.gridTop + l.gridH / 2 - height / 2 - 4)}" width="${round(width + 44)}" ` +
+    `height="${round(height + 28)}" rx="6" fill="${SCREEN.bg}" opacity=".9" stroke="url(#neonH)" stroke-width="1.5"/>` +
+    `<g filter="url(#bloom)">${rows.join('')}</g>` +
+    `</g>`
+  );
+}
+
 /** The arcade HUD: SCORE<1> (live, drawn by the renderer), the round and a segmented
  *  progress bar, and the HI-SCORE: this year's total. */
 export function deckMarkup(l: Layout, p: Palette, total: number, date?: string): string {
@@ -379,15 +430,34 @@ export function deckMarkup(l: Layout, p: Palette, total: number, date?: string):
     `<g class="hud" filter="url(#bloom)">` +
     pixelText(TEXT.score, s.scoreX, d.y + 11, { px: LABEL_PX, fill: SCREEN.white }) +
     pixelText(TEXT.hiScore, right, d.y + 11, { px: LABEL_PX, fill: SCREEN.white, anchor: 'end' }) +
-    pixelText(hi, right, s.scoreY, { px: SCORE_PX, fill: SCREEN.white, anchor: 'end' }) +
+    pixelText(hi, right, s.scoreY, { px: SCORE_PX, fill: SCREEN.gold, anchor: 'end' }) +
     pixelText(date ? `${TEXT.round} ${date}` : TEXT.round, s.barX, d.y + 14, { px: LABEL_PX, fill: SCREEN.dim }) +
     pixelText(TEXT.collected, s.barX + s.barW, d.y + 14, { px: LABEL_PX, fill: SCREEN.dim, anchor: 'end' }) +
     `</g>` +
     `<g class="progress-meter">` +
     `<rect ${bar} fill="${PANEL.track}"/>` +
-    `<rect class="progress" ${bar} fill="${p.accent}" filter="url(#glow)"/>` +
-    `<rect class="progress" ${bar} fill="${p.accent}"/>` +
+    `<rect class="progress" ${bar} fill="url(#neonH)" filter="url(#glow)"/>` +
+    `<rect class="progress" ${bar} fill="url(#neonH)"/>` +
     `<rect ${bar} fill="url(#segments)"/>` +
+    `</g>` +
+    pointsTable(s.barX, s.legendY, s.barW)
+  );
+}
+
+/** The arcade's SCORE ADVANCE TABLE: what each colour of invader is worth. */
+function pointsTable(x: number, y: number, w: number): string {
+  const cols = SCREEN.invader.length - 1;
+  const step = w / cols;
+  return (
+    `<g class="points-table">` +
+    Array.from({ length: cols }, (_, i) => {
+      const level = i + 1;
+      const cx = x + step * i + step / 2 - 22;
+      return (
+        `<use href="#invA" transform="translate(${round(cx)} ${round(y)}) scale(1.1)" fill="${SCREEN.invader[level]}"/>` +
+        pixelText(`= ${SCREEN.points[level]} ${TEXT.pts}`, cx + 18, y + 1.5, { px: 1.1, fill: SCREEN.dim })
+      );
+    }).join('') +
     `</g>`
   );
 }

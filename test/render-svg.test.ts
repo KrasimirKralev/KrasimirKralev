@@ -53,7 +53,7 @@ describe('renderSvg', () => {
     const svg = renderSvg(SAMPLE, DARK);
     expect(svg.match(/<g class="h\d+">/g)).toHaveLength(SAMPLE.totalCells);
     expect(svg.match(/@keyframes h\d+\{/g)).toHaveLength(SAMPLE.totalCells);
-    expect(svg.match(/class="bm x\d+"/g)).toHaveLength(SAMPLE.totalCells);
+    expect(svg.match(/class="ex x\d+"/g)).toHaveLength(SAMPLE.totalCells);
     for (const part of ['laser', 'ship', 'wave']) expect(svg).toContain(`class="${part}"`);
   });
 
@@ -62,6 +62,34 @@ describe('renderSvg', () => {
     const invaders = svg.match(/@keyframes h\d+\{.*?\}\}/g) ?? [];
     expect(invaders).toHaveLength(SAMPLE.totalCells);
     for (const kf of invaders) expect(kf).toMatch(/opacity:0\}[\d.]+%\{opacity:1\}\}$/);
+  });
+
+  it('plays by the arcade rules: the march speeds up and the legs flip on every step', () => {
+    const svg = renderSvg(year(141), DARK, { seed: 4 });
+    const wave = svg.match(/@keyframes wave\{(.*?)\}\}/)![1]!;
+    const times = [...wave.matchAll(/([\d.]+)%\{/g)].map((m) => Number(m[1]));
+    const gaps = times.slice(1).map((t, i) => t - times[i]!);
+    expect(gaps.at(-3)!).toBeLessThan(gaps[0]! / 3);
+    expect(svg).toContain('@keyframes legs-a');
+    expect(svg).toContain('@keyframes legs-b');
+  });
+
+  it('lets the invaders shoot back, and two bombs cost the ship a life each', () => {
+    const svg = renderSvg(year(141), DARK, { seed: 4 });
+    expect((svg.match(/class="bomb bb\d+"/g) ?? []).length).toBeGreaterThan(5);
+    expect(svg.match(/class="bomb bl\d+"/g)).toHaveLength(2);
+    expect(svg).toContain('@keyframes respawn');
+    expect(svg).toContain('class="lives"');
+    expect(svg.match(/class="life l\d"/g)).toHaveLength(3);
+  });
+
+  it('scores every hit by colour, with a +N popup, and sends the mystery saucer', () => {
+    const svg = renderSvg(year(141), DARK, { seed: 4 });
+    expect(svg.match(/<g class="pp p\d+"><g fill/g)).toHaveLength(141);
+    expect(svg).toContain('class="pp pbonus"');
+    expect(svg).toContain('class="ufo"');
+    expect(svg).toContain('class="points-table"');
+    expect(svg).toMatch(/class="cb c\d+x"/); // a COMBO popup
   });
 
   it('has no claw machine left: no rail, cable, prize box or pile', () => {
