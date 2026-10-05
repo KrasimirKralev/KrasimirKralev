@@ -26,7 +26,7 @@ import {
 } from './cabinet';
 import { SCREEN, type Palette } from './palette';
 import { ADVANCE, BOOM, INVADER, SAUCER, glyphUse, pixelText } from './pixel-art';
-import { mulberry32, seededOrder } from './shuffle';
+import { mulberry32 } from './shuffle';
 import {
   APPROACH,
   MARCH_RANGE,
@@ -34,6 +34,7 @@ import {
   SWEEP_END,
   marchAt,
   planMarch,
+  pickMisses,
   planTimeline,
   poseChanges,
   type MarchStep,
@@ -64,6 +65,9 @@ const BOMB_EVERY = 2.2; // % between invader bombs
 const BOMB_FALL = 1.4; // % a bomb takes to reach the ground
 const BOMB_CLEAR = 36; // px a harmless bomb keeps away from the ship
 const SAUCER_PX = 2;
+const SAUCER_CROSS = 7;
+const MIN_STEP = 2; // px: even a shot up the same column gets a tiny walk, never a jump
+const PLAN_PASSES = 4; // % of the loop the saucer takes to cross the whole screen
 const CONFETTI = 22;
 
 const POSES = ['idle', 'runLeft', 'runRight', 'jump', 'failed'] as const;
@@ -97,8 +101,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const l = layout(plan.columns);
   const seed = opts.seed ?? 1;
   const h = hud(l);
-  const homeX = l.glass.x + l.glass.w / 2;
-  const ship = (poses: string) =>
+  const ship = (poses: string, homeX: number) =>
     `<g class="ship" transform="translate(${round(homeX)} 0)"><g class="respawn">` +
     `<g transform="translate(${round(-CRAB_W / 2)} ${round(l.shipTop)})"><g class="recoil">${poses}</g></g></g></g>`;
 
@@ -134,7 +137,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
       pixelText('0'.repeat(digits), h.scoreX, h.scoreY, { px: h.scorePx, fill: SCREEN.phosphor, cls: 'score' }),
       livesText(LIVES),
       socketsMarkup(l),
-      ship(poseMarkup('idle', CRAB_W, 'pose shown')),
+      ship(poseMarkup('idle', CRAB_W, 'pose shown'), l.glass.x + l.glass.w / 2),
       banner(l, TEXT.scanning, 'scanning blink', SCREEN.dim),
       screenOverlay(l),
       `</svg>`,
@@ -145,9 +148,8 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
   const all: Commit[] = plan.steps.flatMap((step) =>
     step.cells.map((cell) => ({ column: step.column, row: cell.row, level: cell.level })),
   );
-  const order = seededOrder(all.length, seed).map((i) => all[i]!);
-  const t = planTimeline(order.length, seed);
-  const march = planMarch(t);
+  const order = firingOrder(all);
+  const { t, march, homeX } = planShots(order, l, seed);
   const dur = `${round(t.durationS)}s`;
   const g = geometry(l, march);
   const play = playWave(order, t, g, homeX);
@@ -255,7 +257,8 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     ...staticCss,
     `.wave{animation:wave ${dur} step-end infinite}`,
     `.la{animation:legs-a ${dur} step-end infinite}.lb{animation:legs-b ${dur} step-end infinite}`,
-    `.ship{animation:ship ${dur} ease-in-out infinite}`,
+    // Linear: the ship walks at one steady pace; each move's time already matches its distance.
+    `.ship{animation:ship ${dur} linear infinite}`,
     `.respawn{animation:respawn ${dur} step-end infinite}`,
     `.recoil{animation:recoil ${dur} linear infinite}`,
     `.laser{animation:laser ${dur} linear infinite}`,
@@ -304,7 +307,7 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     play.ufoMarkup,
     play.bombs.markup,
     `<rect class="laser" x="-1" y="0" width="2" height="${LASER_H}" fill="${SCREEN.laser}" filter="url(#bloom)"/>`,
-    ship(poses),
+    ship(poses, homeX),
     play.deathMarkup,
     popups.join(''),
     fireworks.markup,
@@ -376,12 +379,9 @@ function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
   const ufo: Stop[] = [[0, `opacity:0;${at(l.glass.x - saucerW, saucerY)}`]];
   let ufoMarkup = '';
   let bonusAt: [number, number] | undefined;
-  const saucerLeftAt = (b: NonNullable<Timeline['bonus']>, pct: number) => {
-    const x0 = l.glass.x - saucerW;
-    const x1 = l.glass.x + l.glass.w;
-    const crossing = (b.hit - b.start) / 0.55; // the shot lands just past halfway
-    return x0 + ((x1 - x0) * (pct - b.start)) / crossing;
-  };
+  // It crosses at a steady speed, timed to be right over the ship when the laser arrives.
+  const saucerStart = l.glass.x - saucerW;
+  const saucerSpeed = (l.glass.w + saucerW) / SAUCER_CROSS; // px per % of the loop
 
   // Deaths: a bomb from the bottom of the formation falls on the ship where it stands.
   const deathParts: string[] = [];
@@ -392,16 +392,14 @@ function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
   t.shots.forEach((s, j) => {
     const b = t.bonus;
     if (b && b.before === j) {
-      const hitLeft = saucerLeftAt(b, b.hit);
-      const hitX = hitLeft + saucerW / 2;
+      const hitX = prev;
+      const hitLeft = hitX - saucerW / 2;
+      const enter = Math.max(APPROACH, b.hit - (hitLeft - saucerStart) / saucerSpeed);
       moveTo(b.start, prev);
-      moveTo(b.aim, hitX);
-      moves.bonus = Math.sign(hitX - prev);
       bolt(hitX, b.fire, b.hit, saucerY + SAUCER.h * SAUCER_PX - 2);
-      prev = hitX;
       ufo.push(
-        [b.start - EPS, `opacity:0;${at(saucerLeftAt(b, b.start), saucerY)}`],
-        [b.start, `opacity:1;${at(saucerLeftAt(b, b.start), saucerY)}`],
+        [enter - EPS, `opacity:0;${at(saucerStart, saucerY)}`],
+        [enter, `opacity:1;${at(saucerStart, saucerY)}`],
         [b.hit, `opacity:1;${at(hitLeft, saucerY)}`],
         [b.hit + EPS, `opacity:0;${at(hitLeft, saucerY)}`],
       );
@@ -420,7 +418,7 @@ function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
     moveTo(s.start, prev);
     if (s.miss) {
       // A near miss: the laser slips through the gap beside the invader.
-      const wrongX = fireX + (j % 2 === 0 ? PITCH / 2 : -PITCH / 2);
+      const wrongX = missSpot(fireX, j);
       moveTo(s.miss.aim, wrongX);
       moveTo(s.miss.reaim, wrongX);
       bolt(wrongX, s.miss.fire, s.miss.top, offTop);
@@ -476,6 +474,45 @@ function playWave(order: Commit[], t: Timeline, g: Geometry, homeX: number) {
     },
     deathMarkup: deathParts.join(''),
   };
+}
+
+/** Where a missed shot is fired from: the gap beside the invader. */
+const missSpot = (x: number, j: number): number => x + (j % 2 === 0 ? PITCH / 2 : -PITCH / 2);
+
+/**
+ * Time every move by its true distance, so the ship walks at one steady pace.
+ * The distance depends on where the formation has marched to by each hit, and
+ * the march depends on the timing, so plan, measure, re-plan until it settles.
+ */
+function planShots(order: Commit[], l: Layout, seed: number) {
+  const baseX = order.map((c) => l.gridLeft + c.column * PITCH + CELL / 2);
+  const misses = pickMisses(order.length, seed);
+  const walks = (xs: number[]) =>
+    xs.map((x, j) => {
+      const target = misses.has(j) ? missSpot(x, j) : x;
+      return Math.max(MIN_STEP, Math.abs(target - (j === 0 ? xs[0]! : xs[j - 1]!)));
+    });
+  let xs = baseX;
+  let t = planTimeline({ moves: walks(xs), reaimPx: PITCH / 2 }, seed);
+  for (let pass = 0; pass < PLAN_PASSES; pass++) {
+    const march = planMarch(t);
+    xs = order.map((_, j) => baseX[j]! + marchAt(march, t.shots[j]!.hit).x);
+    t = planTimeline({ moves: walks(xs), reaimPx: PITCH / 2 }, seed);
+  }
+  const march = planMarch(t);
+  return { t, march, homeX: baseX[0]! + marchAt(march, t.shots[0]!.hit).x };
+}
+
+/**
+ * The order a real player clears the year: across the screen and back, a steady
+ * walk with no jumps. Even weeks on the way out, odd weeks on the way back, so the
+ * ship ends near where it started; each column bottom-up, because a laser hits
+ * the lowest invader in its path first.
+ */
+function firingOrder(all: Commit[]): Commit[] {
+  const columns = [...new Set(all.map((c) => c.column))].sort((a, b) => a - b);
+  const sweep = [...columns.filter((c) => c % 2 === 0), ...columns.filter((c) => c % 2 === 1).reverse()];
+  return sweep.flatMap((col) => all.filter((c) => c.column === col).sort((a, b) => b.row - a.row));
 }
 
 /** The lowest invader still standing at a moment: bombs drop from the bottom of the formation. */

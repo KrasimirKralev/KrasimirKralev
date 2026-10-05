@@ -8,28 +8,24 @@ export const RESET_START = 94; // the next wave flies in
 
 /** The ship misses about one shot in this many, then fires again. */
 const MISS_ODDS = 12;
-const MISS_WEIGHT = 1.7; // a missed shot takes this much longer than a clean one
 const BONUS_MIN = 8; // the mystery saucer shows up in waves at least this big
-const BONUS_WEIGHT = 3.2;
 const DEATH_MIN = 20; // invaders get a hit in on waves at least this big
 const DEATH_AFTER = [0.32, 0.71]; // ...after this share of the shots
-const DEATH_WEIGHT = 3;
-const SECONDS_PER_WEIGHT = 0.5; // one clean shot, in real time
 
-// One event's slice, split into moments (fractions of the slice, ascending).
-const CLEAN = { aim: 0.4, fire: 0.45, hit: 0.62, done: 0.95 };
-const MISSED = {
-  missAim: 0.2,
-  missFire: 0.25,
-  missTop: 0.38,
-  reaim: 0.5,
-  aim: 0.6,
-  fire: 0.65,
-  hit: 0.78,
-  done: 0.97,
-};
-const BONUS = { aim: 0.4, fire: 0.48, hit: 0.6, done: 0.92 };
-const DEATH = { impact: 0.28, respawn: 0.58, done: 0.97 };
+/** The ship always moves at one steady speed: a longer move simply takes longer. */
+export const SHIP_SPEED = 70; // px per second
+// Everything else in seconds of real time.
+const SETTLE = 0.08; // stop, then fire
+const LASER = 0.12; // the laser's flight
+const BOOM = 0.2; // the explosion, before the next move
+const MISS_FLIGHT = 0.2; // a missed laser leaving the screen
+const UPSET = 0.32; // the ship's sulk after a miss
+const BONUS_WAIT = 1.2; // waiting for the saucer to come over
+const BONUS_AFTER = 0.8;
+const DEATH_FALL = 0.7;
+const DEATH_BLOWN = 0.6; // gone before it respawns
+const DEATH_BLINK = 1.0;
+const MIN_LOOP_S = 20;
 
 /** When each moment of one shot happens. */
 export interface Shot {
@@ -81,8 +77,19 @@ export function pickMisses(count: number, seed: number): Set<number> {
 
 type Slot = { kind: 'shot'; j: number } | { kind: 'bonus' } | { kind: 'death'; after: number };
 
-/** Lay out the wave: every shot, the saucer and the ship's deaths, end to end. */
-export function planTimeline(count: number, seed: number): Timeline {
+export interface PlanOptions {
+  /** px the ship travels to line up each shot, in firing order (the first from its start). */
+  moves: number[];
+  /** px between a missed shot's spot and the right one. */
+  reaimPx?: number;
+}
+
+/**
+ * Lay out the wave: every shot, the saucer and the ship's deaths, end to end,
+ * with the ship moving at SHIP_SPEED throughout, so its pace never changes.
+ */
+export function planTimeline({ moves, reaimPx = 7.5 }: PlanOptions, seed: number): Timeline {
+  const count = moves.length;
   const misses = pickMisses(count, seed);
   const bonusBefore = count >= BONUS_MIN ? Math.floor(count / 2) : -1;
   const deathsAfter = count >= DEATH_MIN ? DEATH_AFTER.map((f) => Math.floor(count * f)) : [];
@@ -93,39 +100,54 @@ export function planTimeline(count: number, seed: number): Timeline {
     slots.push({ kind: 'shot', j });
     if (deathsAfter.includes(j)) slots.push({ kind: 'death', after: j });
   }
-  const weight = (s: Slot) =>
-    s.kind === 'bonus' ? BONUS_WEIGHT : s.kind === 'death' ? DEATH_WEIGHT : misses.has(s.j) ? MISS_WEIGHT : 1;
-  const total = slots.reduce((a, s) => a + weight(s), 0) || 1;
-  const unit = (SWEEP_END - APPROACH) / total;
+
+  // Each slot's moments as seconds from its start; the last one is its length.
+  const travel = (px: number) => px / SHIP_SPEED;
+  const plans = slots.map((slot): number[] => {
+    if (slot.kind === 'bonus') return [0, BONUS_WAIT, BONUS_WAIT + LASER, BONUS_WAIT + LASER + BONUS_AFTER];
+    if (slot.kind === 'death') return [0, DEATH_FALL, DEATH_FALL + DEATH_BLOWN, DEATH_FALL + DEATH_BLOWN + DEATH_BLINK];
+    const move = travel(moves[slot.j]!);
+    if (!misses.has(slot.j)) {
+      return [0, move, move + SETTLE, move + SETTLE + LASER, move + SETTLE + LASER + BOOM];
+    }
+    // A miss: move to the spot beside it, fire, sulk, step over, fire again.
+    const missFire = move + SETTLE;
+    const missTop = missFire + MISS_FLIGHT;
+    const reaim = missTop + UPSET;
+    const aim = reaim + travel(reaimPx);
+    return [0, move, missFire, missTop, reaim, aim, aim + SETTLE, aim + SETTLE + LASER, aim + SETTLE + LASER + BOOM];
+  });
+  const totalS = plans.reduce((a, m) => a + m[m.length - 1]!, 0) || 1;
+  const pct = (SWEEP_END - APPROACH) / totalS;
 
   const shots: Shot[] = [];
   const deaths: Death[] = [];
   let bonus: Bonus | undefined;
   let cursor = APPROACH;
-  for (const slot of slots) {
-    const sl = weight(slot) * unit;
-    const at = (f: number): number => cursor + f * sl;
+  slots.forEach((slot, i) => {
+    const m = plans[i]!.map((sec) => cursor + sec * pct);
     if (slot.kind === 'bonus') {
-      bonus = { before: bonusBefore, start: cursor, aim: at(BONUS.aim), fire: at(BONUS.fire), hit: at(BONUS.hit), done: at(BONUS.done) };
+      bonus = { before: bonusBefore, start: m[0]!, aim: m[0]!, fire: m[1]!, hit: m[2]!, done: m[3]! };
     } else if (slot.kind === 'death') {
-      deaths.push({ after: slot.after, start: cursor, impact: at(DEATH.impact), respawn: at(DEATH.respawn), done: at(DEATH.done) });
-    } else if (misses.has(slot.j)) {
-      shots.push({
-        start: cursor,
-        miss: { aim: at(MISSED.missAim), fire: at(MISSED.missFire), top: at(MISSED.missTop), reaim: at(MISSED.reaim) },
-        aim: at(MISSED.aim),
-        fire: at(MISSED.fire),
-        hit: at(MISSED.hit),
-        done: at(MISSED.done),
-      });
+      deaths.push({ after: slot.after, start: m[0]!, impact: m[1]!, respawn: m[2]!, done: m[3]! });
+    } else if (m.length === 5) {
+      shots.push({ start: m[0]!, aim: m[1]!, fire: m[2]!, hit: m[3]!, done: m[4]! });
     } else {
-      shots.push({ start: cursor, aim: at(CLEAN.aim), fire: at(CLEAN.fire), hit: at(CLEAN.hit), done: at(CLEAN.done) });
+      shots.push({
+        start: m[0]!,
+        miss: { aim: m[1]!, fire: m[2]!, top: m[3]!, reaim: m[4]! },
+        aim: m[5]!,
+        fire: m[6]!,
+        hit: m[7]!,
+        done: m[8]!,
+      });
     }
-    cursor += sl;
-  }
+    cursor = m[m.length - 1]!;
+  });
 
-  const seconds = (total * SECONDS_PER_WEIGHT) / ((SWEEP_END - APPROACH) / 100);
-  return { shots, bonus, deaths, durationS: Math.min(140, Math.max(30, seconds)) };
+  // The wave fills (SWEEP_END - APPROACH)% of the loop; a tiny year gets a slower loop.
+  const durationS = Math.max(MIN_LOOP_S, totalS / ((SWEEP_END - APPROACH) / 100));
+  return { shots, bonus, deaths, durationS };
 }
 
 // --- The formation's march --------------------------------------------------------
@@ -197,7 +219,6 @@ export interface PoseChange {
 export interface Moves {
   /** Per shot: -1 moving left, 1 moving right, 0 already in place (and the miss's first move). */
   shots: { main: number; miss?: number }[];
-  bonus?: number;
   home: number;
 }
 
@@ -211,9 +232,8 @@ const run = (dir: number): PoseChange['pose'] => (dir < 0 ? 'runLeft' : dir > 0 
 export function poseChanges(t: Timeline, moves: Moves): PoseChange[] {
   const changes: PoseChange[] = [{ at: 0, pose: 'idle' }];
   t.shots.forEach((s, j) => {
-    if (t.bonus && t.bonus.before === j) {
-      changes.push({ at: t.bonus.start, pose: run(moves.bonus ?? 0) }, { at: t.bonus.aim, pose: 'idle' });
-    }
+    // The saucer is timed to pass over the ship, which waits for it where it stands.
+    if (t.bonus && t.bonus.before === j) changes.push({ at: t.bonus.start, pose: 'idle' });
     const d = moves.shots[j]!;
     if (s.miss) {
       changes.push(
