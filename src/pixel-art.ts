@@ -31,7 +31,7 @@ const FONT: Record<string, string[]> = {
   X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
   Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
   Z: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
-  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '0': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
   '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
   '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
   '3': ['#####', '...#.', '..#..', '...#.', '....#', '#...#', '.###.'],
@@ -79,6 +79,21 @@ export const INVADER = {
   ],
 };
 
+/** An invader going up in pixels. */
+export const BOOM = {
+  w: 11,
+  h: 7,
+  rows: [
+    '#...#.#...#',
+    '.#..#.#..#.',
+    '..#.....#..',
+    '##.......##',
+    '..#.....#..',
+    '.#..#.#..#.',
+    '#...#.#...#',
+  ],
+};
+
 /** The mystery ship: a little saucer with the ClawBox cube on top. */
 export const SAUCER = {
   w: 16,
@@ -122,7 +137,7 @@ export function glyphDefs(texts: string[]): string {
     .map((ch) => {
       const bitmap = FONT[ch];
       if (!bitmap) throw new Error(`pixel font has no glyph for "${ch}"`);
-      return `<path id="${glyphId(ch)}" d="${bitmapPath(bitmap)}"/>`;
+      return `<path id="${glyphId(ch)}" d="${bitmapPath(bitmap)}" shape-rendering="crispEdges"/>`;
     })
     .join('');
 }

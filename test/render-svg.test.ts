@@ -44,40 +44,46 @@ describe('renderSvg', () => {
     const svg = renderSvg(SAMPLE, DARK);
     expect(svg.match(/data:image\/webp;base64,/g)).toHaveLength(2);
     expect(svg.match(/id="sheet"/g)).toHaveLength(1);
-    expect(svg).toContain('href="#sheet"');
     for (const pose of ['idle', 'runLeft', 'runRight', 'jump']) {
       expect(svg).toContain(`class="pose pose-${pose}"`);
     }
   });
 
-  it('animates with embedded CSS keyframes, one pickup per commit', () => {
+  it('turns every commit into an invader that is shot down and explodes', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    expect(svg).toContain('@keyframes');
-    expect(svg.match(/@keyframes hv\d+\{/g)).toHaveLength(SAMPLE.totalCells);
+    expect(svg.match(/<g class="h\d+">/g)).toHaveLength(SAMPLE.totalCells);
+    expect(svg.match(/@keyframes h\d+\{/g)).toHaveLength(SAMPLE.totalCells);
+    expect(svg.match(/class="bm x\d+"/g)).toHaveLength(SAMPLE.totalCells);
+    for (const part of ['laser', 'ship', 'wave']) expect(svg).toContain(`class="${part}"`);
   });
 
-  it('keeps every delivered commit on the pile instead of fading it out', () => {
+  it('brings every invader back for the next wave', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    const pickups = svg.match(/@keyframes hv\d+\{.*?\}\}/g) ?? [];
-    expect(pickups).toHaveLength(SAMPLE.totalCells);
-    for (const kf of pickups) expect(kf).not.toContain('opacity:0');
+    const invaders = svg.match(/@keyframes h\d+\{.*?\}\}/g) ?? [];
+    expect(invaders).toHaveLength(SAMPLE.totalCells);
+    for (const kf of invaders) expect(kf).toMatch(/opacity:0\}[\d.]+%\{opacity:1\}\}$/);
   });
 
-  it('draws the cabinet: ClawBox header, glass, prize box, progress bar and score', () => {
+  it('has no claw machine left: no rail, cable, prize box or pile', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    for (const part of ['header', 'led', 'glass', 'prize-box', 'progress-meter', 'score']) {
+    for (const gone of ['prize-box', 'class="arm"', 'belowRail', 'swing', 'pile']) {
+      expect(svg).not.toContain(gone);
+    }
+  });
+
+  it('draws the cabinet: ClawBox header, CRT screen, progress bar and score', () => {
+    const svg = renderSvg(SAMPLE, DARK);
+    for (const part of ['header', 'led', 'glass', 'crt', 'progress-meter', 'score']) {
       expect(svg).toContain(`class="${part}"`);
     }
-    expect(svg).toContain('@keyframes progress');
   });
 
-  it('plays like an arcade: marching invaders, a saucer, a CRT screen, READY! and ROUND CLEAR!', () => {
+  it('plays like an arcade: marching invaders, a saucer, READY! and ROUND CLEAR!', () => {
     const svg = renderSvg(SAMPLE, LIGHT);
-    for (const part of ['march', 'saucer', 'crt', 'ready', 'round-clear']) {
+    for (const part of ['march', 'saucer', 'ready', 'round-clear', 'fireworks']) {
       expect(svg).toContain(`class="${part}"`);
     }
-    expect(svg).toContain('id="invA"');
-    expect(svg).toContain('id="invB"');
+    expect(svg).toContain('@keyframes wave');
   });
 
   it('draws every word in the pixel font, never as <text>', () => {
@@ -88,12 +94,10 @@ describe('renderSvg', () => {
 
   it('has no joystick, buttons or coin slot on the deck', () => {
     const svg = renderSvg(SAMPLE, DARK);
-    for (const gone of ['joystick', 'grab-button', 'coin-slot', 'MOVE', 'GRAB', 'INSERT COIN']) {
-      expect(svg).not.toContain(gone);
-    }
+    for (const gone of ['joystick', 'grab-button', 'coin-slot']) expect(svg).not.toContain(gone);
   });
 
-  it('shows the crab upset only when a grab slips', () => {
+  it('shows the ship upset only when a shot misses', () => {
     expect(renderSvg(year(141), DARK, { seed: 11 })).toContain('class="pose pose-failed"');
     expect(renderSvg(SAMPLE, DARK, { seed: 1 })).not.toContain('pose-failed');
   });
@@ -104,12 +108,12 @@ describe('renderSvg', () => {
     expect(renderSvg(SAMPLE, LIGHT)).toContain(LIGHT.cabinet);
   });
 
-  it('renders the idle SCANNING state for an empty grid, without pickups', () => {
+  it('renders an empty sky for an empty year, without invaders', () => {
     const empty = planSweep(gridFromLevels([[0, 0, 0, 0, 0, 0, 0]]));
     const svg = renderSvg(empty, DARK);
     expect(svg).toContain('class="scanning blink"');
     expect(svg).toContain('class="header"');
-    expect(svg).not.toMatch(/@keyframes hv\d+/);
+    expect(svg).not.toMatch(/@keyframes h\d+/);
   });
 
   it('scales width with the number of columns', () => {

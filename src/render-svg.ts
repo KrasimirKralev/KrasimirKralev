@@ -2,7 +2,6 @@ import {
   CELL,
   CRAB_H,
   CRAB_W,
-  HOLD,
   PITCH,
   TEXT,
   banner,
@@ -15,10 +14,7 @@ import {
   headerMarkup,
   hud,
   layout,
-  pileSlots,
   poseMarkup,
-  prizeBox,
-  railMarkup,
   round,
   scoreDigits,
   screenCss,
@@ -28,12 +24,14 @@ import {
   type Layout,
 } from './cabinet';
 import { SCREEN, type Palette } from './palette';
-import { ADVANCE, glyphUse, pixelText } from './pixel-art';
+import { ADVANCE, BOOM, INVADER, glyphUse, pixelText } from './pixel-art';
 import { mulberry32, seededOrder } from './shuffle';
 import {
   APPROACH,
+  MARCH_STEP,
   RESET_START,
   SWEEP_END,
+  marchAt,
   planTimeline,
   poseChanges,
   type PoseChange,
@@ -45,16 +43,19 @@ import type { ContributionLevel, SweepPlan } from './types';
 export interface RenderOptions {
   /** Date shown on the deck (e.g. "2026-06-09"). */
   date?: string;
-  /** Seed for the day's pickup order and missed grabs. */
+  /** Seed for the day's firing order and missed shots. */
   seed?: number;
 }
 
-const CARRY_LIFT = 6; // the crab hoists a commit this far above its parked height
-const CABLE_LEN = 320; // longer than the deepest dip, cut off at the rail
-const SLIP_HOIST = 0.55; // a missed grab gets this share of the way up before it falls
-const SWING = 4; // degrees the crab swings past a stop
+const LASER_H = 9;
+const EPS = 0.02; // % between "hidden" and "shown" so the laser jumps instead of sliding
+const BOOM_SPAN = 0.45; // % of the loop an explosion stays
+const ROW_STAGGER = 0.7; // % between rows of the next wave flying in
 const CONFETTI = 18;
 const CLEAR_BLINK = 0.6; // % of the loop per ROUND CLEAR! blink
+
+/** GitHub's greens, lifted so even a level-1 day shows up on the black screen. */
+const INVADER_FILL = ['', '#238a43', '#2ea043', '#46d160', '#8bff9c'] as const;
 
 const POSES = ['idle', 'runLeft', 'runRight', 'jump', 'failed'] as const;
 type Pose = (typeof POSES)[number];
@@ -72,19 +73,16 @@ const px = (n: number): string => String(Math.round(n * 10) / 10);
 const keyframes = (name: string, stops: [number, string][]): string =>
   `@keyframes ${name}{${stops.map(([t, css]) => `${round(t)}%{${css}}`).join('')}}`;
 
-/** Render a complete, self-animating, camo-safe SVG for one harvest plan. */
+/** Render a complete, self-animating, camo-safe SVG for one year of contributions. */
 export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {}): string {
   const l = layout(plan.columns);
   const seed = opts.seed ?? 1;
   const h = hud(l);
   const digits = scoreDigits(plan.totalCells);
-  const crabRigAt = (pose: string) =>
-    `<g clip-path="url(#belowRail)"><g class="arm">` +
-    `<rect x="-1" y="${round(l.armRest - CABLE_LEN)}" width="2" height="${CABLE_LEN}" fill="${p.hardware}"/>` +
-    `<g transform="translate(${-CRAB_W / 2} ${round(l.armRest)})"><g class="squash">${pose}</g></g></g></g>`;
-  const carriage =
-    `<rect x="-13" y="${l.railY - 7}" width="26" height="14" rx="4" fill="url(#chrome)"/>` +
-    `<rect x="-9" y="${l.railY - 1.5}" width="18" height="3" rx="1.5" fill="${p.accent}"/>`;
+  const homeX = l.glass.x + l.glass.w / 2;
+  const ship = (poses: string) =>
+    `<g class="ship" transform="translate(${round(homeX)} 0)">` +
+    `<g transform="translate(${round(-CRAB_W / 2)} ${round(l.shipTop)})"><g class="recoil">${poses}</g></g></g>`;
 
   const staticCss = [
     headerCss(l),
@@ -92,214 +90,203 @@ export function renderSvg(plan: SweepPlan, p: Palette, opts: RenderOptions = {})
     screenCss(l),
     frameCss(),
     `.pose{opacity:0}.shown{opacity:1}`,
-    `.cell{transform-box:fill-box;transform-origin:center}`,
     // The <use> inside spans the whole sprite sheet, so fill-box would scale around
-    // the sheet; pin the origin to the crab's feet in its own coordinates instead.
-    `.squash{transform-box:view-box;transform-origin:${round(CRAB_W / 2)}px ${round(CRAB_H)}px}`,
+    // the sheet; pin the origin to the ship's feet in its own coordinates instead.
+    `.recoil{transform-box:view-box;transform-origin:${round(CRAB_W / 2)}px ${round(CRAB_H)}px}`,
   ];
   const scene = [
     defs(l, p, opts.date),
     cabinetBody(l, p),
     headerMarkup(l, p),
     screenMarkup(l, seed),
-    railMarkup(l, p),
-    socketsMarkup(l),
-    prizeBox(l, p),
     deckMarkup(l, p, plan.totalCells, opts.date),
   ];
 
-  // --- Nothing to collect: the crab scans the empty grid ----------------------
+  // --- No contributions: an empty sky, the ship patrolling -----------------------
   if (plan.isEmpty) {
-    const mid = l.gridLeft + l.gridW / 2;
     const style = [
       ...staticCss,
       `.progress{transform:scaleX(0)}`,
-      `.trolley{animation:scan 5s ease-in-out infinite}`,
-      `@keyframes scan{0%,100%{transform:translateX(${round(l.gridLeft + 20)}px)}50%{transform:translateX(${round(l.gridLeft + l.gridW - 20)}px)}}`,
+      `.ship{animation:patrol 6s ease-in-out infinite}`,
+      `@keyframes patrol{0%,100%{transform:translateX(${round(l.gridLeft + 30)}px)}50%{transform:translateX(${round(l.gridLeft + l.gridW - 30)}px)}}`,
     ].join('');
     return [
-      svgOpen(l, 'The ClawBox crab, scanning an empty contribution grid'),
+      svgOpen(l, 'An empty contribution graph: no invaders today'),
       `<style>${style}</style>`,
       ...scene,
       `<g filter="url(#bloom)">${pixelText('0'.repeat(digits), h.scoreX, h.scoreY, { px: h.scorePx, fill: SCREEN.phosphor, cls: 'score' })}</g>`,
-      `<g class="trolley" transform="translate(${round(mid)} 0)">${crabRigAt(poseMarkup('idle', CRAB_W, 'pose shown'))}${carriage}</g>`,
+      socketsMarkup(l),
+      ship(poseMarkup('idle', CRAB_W, 'pose shown')),
       banner(l, TEXT.scanning, 'scanning blink', SCREEN.dim),
       screenOverlay(l),
       `</svg>`,
     ].join('');
   }
 
-  // --- The day's order, and the moments of every pickup -----------------------
+  // --- The day's firing order, and every shot's moments ------------------------
   const all: Commit[] = plan.steps.flatMap((step) =>
     step.cells.map((cell) => ({ column: step.column, row: cell.row, level: cell.level })),
   );
   const order = seededOrder(all.length, seed).map((i) => all[i]!);
   const timeline = planTimeline(order.length, seed);
   const dur = `${round(timeline.durationS)}s`;
-  const changes = poseChanges(timeline);
+  const aims = aimShots(order, timeline, l, homeX);
+  const changes = poseChanges(timeline, aims.dirs, Math.sign(homeX - aims.lastX));
   const usedPoses = POSES.filter((pose) => changes.some((c) => c.pose === pose));
 
-  const geo = geometry(l);
-  const slots = pileSlots(l, order.length);
-  const motion = crabMotion(order, timeline, geo);
-
-  const cells = order.map(
-    (c, j) =>
-      `<rect class="cell h${j}" x="${l.gridLeft + c.column * PITCH}" y="${round(geo.cellY(c.row))}" ` +
-      `width="${CELL}" height="${CELL}" rx="2" fill="${SCREEN.cell[c.level]}"/>`,
-  );
-  const pickupKeyframes = order.map((c, j) => pickupFrames(j, c, timeline, geo, slots[j]!));
+  const cellX = (col: number) => l.gridLeft + col * PITCH;
+  const cellY = (row: number) => l.gridTop + row * PITCH;
+  const invX = (CELL - INVADER.w) / 2;
+  const invY = (CELL - INVADER.h) / 2;
+  const invaders = order
+    .map((c, j) => {
+      const x = round(cellX(c.column) + invX);
+      const y = round(cellY(c.row) + invY);
+      const fill = INVADER_FILL[c.level];
+      return (
+        `<g class="h${j}"><use href="#invA" class="fa" x="${x}" y="${y}" fill="${fill}"/>` +
+        `<use href="#invB" class="fb" x="${x}" y="${y}" fill="${fill}"/></g>`
+      );
+    })
+    .join('');
+  const booms = order
+    .map(
+      (c, j) =>
+        `<use href="#boom" class="bm x${j}" x="${round(cellX(c.column) + (CELL - BOOM.w) / 2)}" ` +
+        `y="${round(cellY(c.row) + (CELL - BOOM.h) / 2)}" fill="${SCREEN.gold}"/>`,
+    )
+    .join('');
 
   const counter = scoreCounter(timeline, h, digits);
-  const confetti = confettiBurst(l, p, seed);
+  const fireworks = confettiBurst(l, p, seed);
 
   const style = [
     ...staticCss,
-    `.trolley{animation:trolley ${dur} ease-in-out infinite}`,
-    `.arm{animation:arm ${dur} ease-in-out infinite}`,
-    `.swing{transform-box:view-box;transform-origin:0 ${l.railY}px;animation:swing ${dur} ease-in-out infinite}`,
-    `.squash{animation:squash ${dur} linear infinite}`,
+    `.wave{animation:wave ${dur} step-end infinite}`,
+    `.ship{animation:ship ${dur} ease-in-out infinite}`,
+    `.recoil{animation:recoil ${dur} linear infinite}`,
+    `.laser{animation:laser ${dur} linear infinite}`,
     `.progress{animation:progress ${dur} linear infinite}`,
     `.ready{opacity:0;animation:ready ${dur} step-end infinite}`,
     `.round-clear{opacity:0;animation:clear ${dur} step-end infinite}`,
+    `.bm{opacity:0}`,
     ...usedPoses.map((pose) => `.pose-${pose}{animation:v-${pose} ${dur} step-end infinite}`),
-    // Same easing as the crab, so a carried commit stays under its feet the whole way.
-    ...order.map((_, j) => `.h${j}{animation:hv${j} ${dur} ease-in-out infinite}`),
+    ...order.map((_, j) => `.h${j}{animation:h${j} ${dur} step-end infinite}.x${j}{animation:x${j} ${dur} step-end infinite}`),
     counter.css(dur),
-    confetti.css(dur),
-    keyframes('trolley', motion.trolley),
-    keyframes('arm', motion.depth.map(([t, d]) => [t, `transform:translateY(${px(d)}px)`])),
-    keyframes('swing', motion.swing),
-    keyframes('squash', motion.squash),
+    fireworks.css(dur),
+    keyframes('wave', waveFrames()),
+    keyframes('ship', aims.ship),
+    keyframes('recoil', aims.recoil),
+    keyframes('laser', aims.laser),
     keyframes('progress', progressFrames(timeline)),
     keyframes('ready', [[0, 'opacity:1'], [APPROACH, 'opacity:0']]),
     keyframes('clear', clearFrames()),
     ...usedPoses.map((pose) => keyframes(`v-${pose}`, visibilityFrames(changes, pose))),
-    ...pickupKeyframes,
+    ...order.map((c, j) => invaderFrames(j, c, timeline)),
   ].join('');
 
-  const crab = usedPoses.map((pose) => poseMarkup(pose, CRAB_W)).join('');
+  const poses = usedPoses.map((pose) => poseMarkup(pose, CRAB_W)).join('');
   return [
-    svgOpen(l, `The ClawBox crab collecting ${plan.totalCells} contributions into a prize box`),
+    svgOpen(l, `The ClawBox crab shooting down ${plan.totalCells} contribution invaders`),
     `<style>${style}</style>`,
     ...scene,
     counter.markup,
-    ...cells,
-    confetti.markup,
-    // The crab draws after the grid so it stays in front as it lowers to grab.
-    `<g class="trolley" transform="translate(${round(geo.boxX)} 0)"><g class="swing">${crabRigAt(crab)}</g>${carriage}</g>`,
+    // The whole year marches as one formation: empty days, invaders and their explosions.
+    `<g class="wave">${socketsMarkup(l)}${invaders}${booms}</g>`,
+    `<rect class="laser" x="-1" y="0" width="2" height="${LASER_H}" fill="${SCREEN.white}" filter="url(#bloom)"/>`,
+    ship(poses),
+    fireworks.markup,
     banner(l, TEXT.ready, 'ready', SCREEN.white),
     banner(l, TEXT.clear, 'round-clear', SCREEN.gold),
-    // The CRT glass goes over everything on the screen, the crab included.
+    // The CRT glass goes over everything on the screen.
     screenOverlay(l),
     `</svg>`,
   ].join('');
 }
 
-/** ROUND CLEAR! blinks from the last commit until the reset. */
-function clearFrames(): [number, string][] {
-  const stops: [number, string][] = [[0, 'opacity:0']];
-  let on = true;
-  for (let t = SWEEP_END; t < RESET_START; t += CLEAR_BLINK) {
-    stops.push([t, `opacity:${on ? 1 : 0}`]);
-    on = !on;
+// --- Aiming: where the ship stands, and the laser, for every shot ---------------
+
+function aimShots(order: Commit[], t: Timeline, l: Layout, homeX: number) {
+  const colX = (col: number) => l.gridLeft + col * PITCH + CELL / 2;
+  const laserTop = l.shipTop - LASER_H + 6; // leaves from between the claws
+  const offTop = l.glass.y - LASER_H - 4;
+  const x = (v: number): string => `transform:translateX(${px(v)}px)`;
+  const at = (lx: number, ly: number): string => `transform:translate(${px(lx)}px,${px(ly)}px)`;
+
+  const ship: [number, string][] = [[0, x(homeX)]];
+  const laser: [number, string][] = [[0, `opacity:0;${at(homeX, laserTop)}`]];
+  const recoil: [number, string][] = [[0, 'transform:scale(1)']];
+  const dirs: { main: number; miss?: number }[] = [];
+  const bolt = (bx: number, fire: number, end: number, endY: number) => {
+    laser.push(
+      [fire - EPS, `opacity:0;${at(bx, laserTop)}`],
+      [fire, `opacity:1;${at(bx, laserTop)}`],
+      [end, `opacity:1;${at(bx, endY)}`],
+      [end + EPS, `opacity:0;${at(bx, endY)}`],
+    );
+    recoil.push([fire - 0.1, 'transform:scale(1)'], [fire, 'transform:scale(1.06,.9)'], [fire + 0.15, 'transform:scale(1)']);
+  };
+
+  let prev = homeX;
+  t.shots.forEach((s, j) => {
+    const c = order[j]!;
+    // Aim where the invader will be when the laser arrives: the formation marches.
+    const m = marchAt(s.hit);
+    const fireX = colX(c.column) + m.x;
+    const hitY = l.gridTop + c.row * PITCH + m.y + (CELL + INVADER.h) / 2 - 2;
+    ship.push([s.start, x(prev)]);
+    if (s.miss) {
+      // A near miss: the laser slips through the gap beside the invader.
+      const wrongX = fireX + (j % 2 === 0 ? PITCH / 2 : -PITCH / 2);
+      ship.push([s.miss.aim, x(wrongX)], [s.miss.reaim, x(wrongX)]);
+      bolt(wrongX, s.miss.fire, s.miss.top, offTop);
+      dirs.push({ miss: Math.sign(wrongX - prev), main: Math.sign(fireX - wrongX) });
+    } else {
+      dirs.push({ main: Math.sign(fireX - prev) });
+    }
+    ship.push([s.aim, x(fireX)]);
+    bolt(fireX, s.fire, s.hit, hitY);
+    prev = fireX;
+  });
+
+  ship.push([RESET_START, x(prev)], [100, x(homeX)]);
+  laser.push([100, `opacity:0;${at(homeX, laserTop)}`]);
+  recoil.push([100, 'transform:scale(1)']);
+  return { ship, laser, recoil, dirs, lastX: prev };
+}
+
+/** The formation's march, step by step, across the whole loop. */
+function waveFrames(): [number, string][] {
+  const stops: [number, string][] = [];
+  let last = '';
+  for (let k = 0; k * MARCH_STEP < 100; k++) {
+    const m = marchAt(k * MARCH_STEP);
+    const css = `transform:translate(${m.x}px,${m.y}px)`;
+    if (css !== last) stops.push([k * MARCH_STEP, css]);
+    last = css;
   }
-  stops.push([RESET_START, 'opacity:0']);
+  stops.push([100, 'transform:translate(0px,0px)']);
   return stops;
 }
 
-// --- Geometry shared by the crab and the commits -------------------------------
-
-interface Geometry {
-  l: Layout;
-  boxX: number;
-  colX: (col: number) => number;
-  cellY: (row: number) => number;
-  /** Crab dip (px below parked) that puts its feet on a row. */
-  grabDepth: (row: number) => number;
-  /** Crab dip that lowers a held commit into the box. */
-  dropDepth: number;
+/** An invader stays until its hit, explodes, and returns with its row for the next wave. */
+function invaderFrames(j: number, c: Commit, t: Timeline): string {
+  const s = t.shots[j]!;
+  return (
+    keyframes(`h${j}`, [
+      [0, 'opacity:1'],
+      [s.hit, 'opacity:0'],
+      [RESET_START + c.row * ROW_STAGGER, 'opacity:1'],
+    ]) +
+    keyframes(`x${j}`, [
+      [0, 'opacity:0'],
+      [s.hit, 'opacity:1'],
+      [Math.min(s.hit + BOOM_SPAN, s.done), 'opacity:0'],
+    ])
+  );
 }
 
-function geometry(l: Layout): Geometry {
-  const cellY = (row: number) => l.gridTop + row * PITCH;
-  return {
-    l,
-    boxX: l.box.x + l.box.w / 2,
-    colX: (col) => l.gridLeft + col * PITCH + CELL / 2,
-    cellY,
-    grabDepth: (row) => cellY(row) + CELL / 2 - HOLD - l.armRest,
-    dropDepth: l.box.y + 10 - HOLD - l.armRest,
-  };
-}
-
-/** Where a held commit's center sits, for a crab at this dip. */
-const heldY = (g: Geometry, depth: number): number => g.l.armRest + depth + HOLD;
-
-// --- The crab -------------------------------------------------------------------
-
-function crabMotion(order: Commit[], t: Timeline, g: Geometry) {
-  const trolley: [number, string][] = [[0, `transform:translateX(${round(g.boxX)}px)`]];
-  const depth: [number, number][] = [[0, 0]];
-  const swing: [number, string][] = [[0, 'transform:rotate(0)']];
-  const squash: [number, string][] = [[0, 'transform:scale(1)']];
-  const x = (v: number): string => `transform:translateX(${px(v)}px)`;
-  const rot = (deg: number): string => `transform:rotate(${px(deg)}deg)`;
-  const bump = (at: number, span: number) => {
-    squash.push(
-      [at - span, 'transform:scale(1)'],
-      [at, 'transform:scale(1.08,.86)'],
-      [at + span, 'transform:scale(1)'],
-    );
-  };
-
-  t.pickups.forEach((pk, j) => {
-    const c = order[j]!;
-    const colX = g.colX(c.column);
-    const dGrab = g.grabDepth(c.row);
-
-    trolley.push([pk.start, x(g.boxX)], [pk.arrive, x(colX)], [pk.lift, x(colX)], [pk.boxArrive, x(g.boxX)]);
-
-    depth.push([pk.arrive, 0], [pk.grab, dGrab]);
-    if (pk.slip) {
-      depth.push(
-        [pk.slip.lift, dGrab * SLIP_HOIST],
-        [pk.slip.fall, dGrab * SLIP_HOIST],
-        [pk.slip.regrab, dGrab],
-      );
-    }
-    depth.push(
-      [pk.lift, -CARRY_LIFT],
-      [pk.boxArrive, -CARRY_LIFT],
-      [pk.drop, g.dropDepth],
-      [pk.settle, 0],
-    );
-
-    // Overshoot when it stops, swing back, settle before the next move.
-    swing.push(
-      [pk.start, rot(0)],
-      [pk.arrive, rot(SWING)],
-      [(pk.arrive + pk.grab) / 2, rot(-SWING * 0.4)],
-      [pk.grab, rot(0)],
-      [pk.lift, rot(0)],
-      [pk.boxArrive, rot(-SWING)],
-      [(pk.boxArrive + pk.drop) / 2, rot(SWING * 0.4)],
-      [pk.drop, rot(0)],
-    );
-
-    const span = Math.min((pk.lift - pk.grab) * 0.3, 0.25);
-    bump(pk.grab, span);
-    if (pk.slip) bump(pk.slip.regrab, span);
-  });
-
-  trolley.push([100, x(g.boxX)]);
-  depth.push([SWEEP_END, 0], [100, 0]);
-  swing.push([100, rot(0)]);
-  squash.push([100, 'transform:scale(1)']);
-  return { trolley, depth, swing, squash };
-}
-
-/** Each pose shows only while it is the crab's current pose. */
+/** Each pose shows only while it is the ship's current pose. */
 function visibilityFrames(changes: PoseChange[], pose: Pose): [number, string][] {
   const stops: [number, string][] = [];
   let shown: boolean | undefined;
@@ -312,75 +299,37 @@ function visibilityFrames(changes: PoseChange[], pose: Pose): [number, string][]
   return stops;
 }
 
-/** The deck's progress bar fills as each commit lands, and empties for the reset. */
+/** The deck's progress bar fills with each hit, and empties for the next wave. */
 function progressFrames(t: Timeline): [number, string][] {
-  const total = t.pickups.length;
+  const total = t.shots.length;
   return [
     [0, 'transform:scaleX(0)'],
-    ...t.pickups.map((pk, j): [number, string] => [pk.settle, `transform:scaleX(${round((j + 1) / total)})`]),
+    ...t.shots.map((s, j): [number, string] => [s.hit, `transform:scaleX(${round((j + 1) / total)})`]),
     [RESET_START, 'transform:scaleX(1)'],
     [100, 'transform:scaleX(0)'],
   ];
 }
 
-// --- The commits ----------------------------------------------------------------
-
-/**
- * One commit's trip: it flashes when grabbed, rides under the crab to the box,
- * drops onto the pile and stays there; at the end of the round every commit
- * flies back to its day in the grid.
- */
-function pickupFrames(
-  j: number,
-  c: Commit,
-  t: Timeline,
-  g: Geometry,
-  slot: { x: number; y: number; size: number },
-): string {
-  const pk = t.pickups[j]!;
-  const cx = g.colX(c.column);
-  const cy = g.cellY(c.row) + CELL / 2;
-  // A missing scale() pads to scale(1), so only the pile needs one.
-  const at = (dx: number, dy: number, k = 1): string =>
-    `transform:translate(${px(dx)}px,${px(dy)}px)${k === 1 ? '' : ` scale(${round(k)})`}`;
-  const hold = heldY(g, -CARRY_LIFT) - cy;
-  const toBox = g.boxX - cx;
-  const pile = at(slot.x - cx, slot.y - cy, slot.size / CELL);
-  const color = SCREEN.cell[c.level];
-
-  // The flash builds while the crab lowers onto it, then fades as it is lifted.
-  const stops: [number, string][] = [
-    [0, `${at(0, 0)};fill:${color}`],
-    [pk.arrive, `fill:${color}`],
-    [pk.grab, `${at(0, 0)};fill:#fff`],
-  ];
-  if (pk.slip) {
-    const dGrab = g.grabDepth(c.row);
-    stops.push(
-      [pk.slip.lift, at(0, heldY(g, dGrab * SLIP_HOIST) - cy)],
-      [pk.slip.fall, `${at(0, 0)};fill:${color}`],
-      [pk.slip.regrab, `${at(0, 0)};fill:#fff`],
-    );
+/** ROUND CLEAR! blinks from the last hit until the next wave. */
+function clearFrames(): [number, string][] {
+  const stops: [number, string][] = [[0, 'opacity:0']];
+  let on = true;
+  for (let t = SWEEP_END; t < RESET_START; t += CLEAR_BLINK) {
+    stops.push([t, `opacity:${on ? 1 : 0}`]);
+    on = !on;
   }
-  stops.push(
-    [pk.lift, `${at(0, hold)};fill:${color}`],
-    [pk.boxArrive, at(toBox, hold)],
-    [pk.drop, at(toBox, heldY(g, g.dropDepth) - cy)],
-    [pk.settle, pile],
-    [RESET_START, pile],
-    [100, at(0, 0)],
-  );
-  return keyframes(`hv${j}`, stops);
+  stops.push([RESET_START, 'opacity:0']);
+  return stops;
 }
 
 /**
- * SCORE<1>, counting up as each commit lands: one glyph per digit place and
- * value, each shown only while that place reads that digit. (SVG cannot animate
- * text, and a pre-drawn number per total would cost far more.)
+ * SCORE<1>, counting up with each hit: one glyph per digit place and value,
+ * each shown only while that place reads that digit. (SVG cannot animate text,
+ * and a pre-drawn number per total would cost far more.)
  */
 function scoreCounter(t: Timeline, h: ReturnType<typeof hud>, digits: number) {
-  const total = t.pickups.length;
-  const startOf = [0, ...t.pickups.map((pk) => pk.settle)]; // when the score becomes v
+  const total = t.shots.length;
+  const startOf = [0, ...t.shots.map((s) => s.hit)]; // when the score becomes v
   const uses: string[] = [];
   const rules: string[] = [];
   for (let place = 0; place < digits; place++) {
@@ -406,43 +355,45 @@ function scoreCounter(t: Timeline, h: ReturnType<typeof hud>, digits: number) {
     }
   }
   return {
+    // No bloom on the live score: the digits read crisper without it.
     markup:
-      `<g filter="url(#bloom)"><g class="score" fill="${SCREEN.phosphor}" ` +
-      `transform="translate(${round(h.scoreX)} ${round(h.scoreY)}) scale(${h.scorePx})">${uses.join('')}</g></g>`,
+      `<g class="score" fill="${SCREEN.phosphor}" ` +
+      `transform="translate(${round(h.scoreX)} ${round(h.scoreY)}) scale(${h.scorePx})">${uses.join('')}</g>`,
     css: (dur: string) => `.sc{opacity:0}` + rules.join('').replace(/DUR/g, dur),
   };
 }
 
-/** A burst of confetti out of the prize box when the round is done. */
+/** Fireworks over the cleared sky when the wave is done. */
 function confettiBurst(l: Layout, p: Palette, seed: number) {
   const rng = mulberry32(seed ^ 0xc0f);
-  const x0 = l.box.x + l.box.w / 2;
-  const y0 = l.box.y + 6;
-  const colors = [p.accent, SCREEN.gold, SCREEN.cell[2], SCREEN.cell[4], SCREEN.white];
+  const x0 = l.gridLeft + l.gridW / 2;
+  const y0 = l.gridTop + l.gridH / 2;
+  const colors = [p.accent, SCREEN.gold, SCREEN.phosphor, SCREEN.red, SCREEN.white];
   const markup: string[] = [];
   const frames: string[] = [];
   for (let i = 0; i < CONFETTI; i++) {
-    const dx = (rng() - 0.5) * 150;
-    const up = 30 + rng() * 45;
-    const spin = Math.round((rng() - 0.5) * 720);
+    const a = (i / CONFETTI) * Math.PI * 2;
+    const r = 70 + rng() * 90;
+    const dx = Math.cos(a) * r * 1.8;
+    const dy = Math.sin(a) * r * 0.55;
     markup.push(
-      `<rect class="cf cf${i}" x="${round(x0 - 2)}" y="${round(y0 - 3)}" width="4" height="6" rx="1" fill="${colors[i % colors.length]}"/>`,
+      `<rect class="cf cf${i}" x="${round(x0 - 2)}" y="${round(y0 - 2)}" width="4" height="4" fill="${colors[i % colors.length]}"/>`,
     );
     frames.push(
       keyframes(`cf${i}`, [
-        [0, 'opacity:0;transform:translate(0,0) rotate(0)'],
-        [SWEEP_END, 'opacity:0;transform:translate(0,0) rotate(0)'],
-        [SWEEP_END + 0.3, 'opacity:1;transform:translate(0,0) rotate(0)'],
-        [SWEEP_END + 2.2, `opacity:1;transform:translate(${round(dx * 0.6)}px,${round(-up)}px) rotate(${spin / 2}deg)`],
-        [RESET_START, `opacity:0;transform:translate(${round(dx)}px,${round(-up + 70)}px) rotate(${spin}deg)`],
-        [100, 'opacity:0;transform:translate(0,0) rotate(0)'],
+        [0, 'opacity:0;transform:translate(0,0)'],
+        [SWEEP_END, 'opacity:0;transform:translate(0,0)'],
+        [SWEEP_END + 0.3, 'opacity:1;transform:translate(0,0)'],
+        [SWEEP_END + 2.4, `opacity:1;transform:translate(${round(dx)}px,${round(dy)}px)`],
+        [RESET_START, `opacity:0;transform:translate(${round(dx * 1.1)}px,${round(dy + 30)}px)`],
+        [100, 'opacity:0;transform:translate(0,0)'],
       ]),
     );
   }
   return {
-    markup: `<g class="confetti">${markup.join('')}</g>`,
+    markup: `<g class="fireworks">${markup.join('')}</g>`,
     css: (dur: string) =>
-      `.cf{opacity:0;transform-box:fill-box;transform-origin:center}` +
+      `.cf{opacity:0}` +
       Array.from({ length: CONFETTI }, (_, i) => `.cf${i}{animation:cf${i} ${dur} linear infinite}`).join('') +
       frames.join(''),
   };

@@ -11,13 +11,14 @@ import {
   WORDMARK_W,
   type MascotPose,
 } from './brand-assets';
-import { INVADER, SAUCER, bitmapPath, glyphDefs, pixelText, textWidth } from './pixel-art';
+import { BOOM, INVADER, SAUCER, bitmapPath, glyphDefs, pixelText, textWidth } from './pixel-art';
 import { mulberry32 } from './shuffle';
+import { MARCH_RANGE } from './timeline';
 
 export const round = (n: number): string => String(Math.round(n * 100) / 100);
 
 // --- Geometry (px) -----------------------------------------------------------
-export const CELL = 12;
+export const CELL = 13;
 export const GAP = 2;
 export const PITCH = CELL + GAP;
 export const ROWS = 7;
@@ -26,31 +27,24 @@ const SIDE = 18; // cabinet side panels
 const HEADER_H = 66;
 const LED_GAP = 14; // the LED light bar sits between the header and the glass
 const GAP_V = 10; // between the glass and the deck
-const GLASS_PAD_X = 14;
-const GLASS_PAD_BOTTOM = 18;
-const RAIL_DROP = 12; // rail below the top of the glass
-const CABLE_MIN = 10; // cable length with the crab parked
-export const CRAB_W = 54;
+const GLASS_PAD_X = 20;
+const GRID_DROP = 22; // formation below the top of the screen
+const LASER_LANE = 56; // open space between the lowest the formation gets and the ship
+export const CRAB_W = 46;
 export const CRAB_H = (CRAB_W * MASCOT_FRAME_H) / MASCOT_FRAME_W;
-/** How far below the crab's top a held commit's center hangs (just under its feet). */
-export const HOLD = CRAB_H + 1;
-const CARRY_CLEAR = 9; // a carried commit clears the top row by this much
-const BOX_GAP = 22;
-const BOX_W = 84;
 const DECK_H = 54;
 const LOGO_H = 34;
 const INVADER_PX = 2;
 const MARCH = 18; // how far a formation steps across before it turns back
-const STARS = 70;
+const STARS = 80;
 
 /** Every string drawn in the pixel font, so only the glyphs in use are embedded. */
 export const TEXT = {
-  tagline: 'CONTRIBUTION CATCHER',
+  tagline: 'CONTRIBUTION INVADERS',
   score: 'SCORE<1>',
   hiScore: 'HI-SCORE',
-  round: 'ROUND',
-  collected: 'COLLECTED',
-  prizes: 'PRIZES',
+  round: 'WAVE',
+  collected: 'CLEARED',
   ready: 'READY!',
   clear: 'ROUND CLEAR!',
   scanning: 'SCANNING...',
@@ -64,14 +58,13 @@ export interface Layout {
   gridTop: number;
   gridW: number;
   gridH: number;
-  railY: number;
-  /** Crab's top edge when parked; every dip is measured from here. */
-  armRest: number;
+  /** The ship's top edge; it runs along the bottom of the screen. */
+  shipTop: number;
+  groundY: number;
   header: Rect;
   ledY: number;
   glass: Rect;
   deck: Rect;
-  box: Rect;
 }
 
 interface Rect {
@@ -85,23 +78,21 @@ export function layout(cols: number): Layout {
   const cabX = OUTER;
   const header = { x: cabX + SIDE, y: OUTER + 10, w: 0, h: HEADER_H };
   const glassTop = header.y + HEADER_H + LED_GAP;
-  const railY = glassTop + RAIL_DROP;
-  const armRest = railY + CABLE_MIN;
-  const gridTop = armRest + HOLD + CARRY_CLEAR;
   const gridLeft = cabX + SIDE + GLASS_PAD_X;
+  const gridTop = glassTop + GRID_DROP;
   const gridW = cols * PITCH - GAP;
   const gridH = ROWS * PITCH - GAP;
-  const box = { x: gridLeft + gridW + BOX_GAP, y: gridTop - 2, w: BOX_W, h: gridH + 4 };
-  const glassRight = box.x + BOX_W + GLASS_PAD_X;
+  const shipTop = gridTop + gridH + MARCH_RANGE.y + LASER_LANE;
+  const groundY = shipTop + CRAB_H + 3;
   const glass = {
     x: cabX + SIDE,
     y: glassTop,
-    w: glassRight - (cabX + SIDE),
-    h: box.y + box.h + GLASS_PAD_BOTTOM - glassTop,
+    w: GLASS_PAD_X + gridW + MARCH_RANGE.x + GLASS_PAD_X,
+    h: groundY + 12 - glassTop,
   };
   header.w = glass.w;
   const deck = { x: glass.x, y: glass.y + glass.h + GAP_V, w: glass.w, h: DECK_H };
-  const cabW = glassRight + SIDE - cabX;
+  const cabW = glass.x + glass.w + SIDE - cabX;
   const cabH = deck.y + DECK_H + 12 - OUTER;
   return {
     width: cabX + cabW + OUTER,
@@ -111,19 +102,18 @@ export function layout(cols: number): Layout {
     gridTop,
     gridW,
     gridH,
-    railY,
-    armRest,
+    shipTop,
+    groundY,
     header,
     ledY: header.y + HEADER_H + LED_GAP / 2 - 1.5,
     glass,
     deck,
-    box,
   };
 }
 
 /** Score digits: 4 places like an arcade, more if a year ever needs them. */
 export const scoreDigits = (total: number): number => Math.max(4, String(total).length);
-const SCORE_PX = 2.6;
+const SCORE_PX = 3;
 const LABEL_PX = 1.4;
 
 /** Where the HUD's live parts sit (the score counts up, the bar fills). */
@@ -131,7 +121,7 @@ export function hud(l: Layout) {
   const d = l.deck;
   return {
     scoreX: d.x + 20,
-    scoreY: d.y + 25,
+    scoreY: d.y + 24,
     scorePx: SCORE_PX,
     barX: d.x + 170,
     barY: d.y + 30,
@@ -156,8 +146,10 @@ export function defs(l: Layout, p: Palette, date?: string): string {
     `<defs>` +
     `<image id="sheet" href="${MASCOT_SHEET}" width="${MASCOT_SHEET_W}" height="${MASCOT_SHEET_H}"/>` +
     glyphDefs([...Object.values(TEXT), '0123456789', date ?? '']) +
+    `<g shape-rendering="crispEdges">` +
     `<path id="invA" d="${bitmapPath(INVADER.a)}"/><path id="invB" d="${bitmapPath(INVADER.b)}"/>` +
-    `<path id="saucer" d="${bitmapPath(SAUCER.rows)}"/>` +
+    `<path id="saucer" d="${bitmapPath(SAUCER.rows)}"/><path id="boom" d="${bitmapPath(BOOM.rows)}"/>` +
+    `</g>` +
     v('body', [[0, p.cabinet], [1, p.cabinetEdge]]) +
     v('chrome', [[0, '#f5f7fa'], [0.42, '#a3acb9'], [0.5, '#5f6a7a'], [1, '#d9dee5']]) +
     // Panel edges: the same metal, darker, so a border reads as trim rather than an outline.
@@ -179,11 +171,9 @@ export function defs(l: Layout, p: Palette, date?: string): string {
     clip('glassClip', l.glass, 8) +
     clip('headerClip', l.header, 12) +
     `<clipPath id="ledClip"><rect x="${l.header.x + 10}" y="${round(l.ledY)}" width="${l.header.w - 20}" height="3"/></clipPath>` +
-    // One tile per day: far smaller than a rect per socket.
+    // Empty days: a dim dot per day, one pattern tile instead of a rect each.
     `<pattern id="sockets" x="${l.gridLeft}" y="${round(l.gridTop)}" width="${PITCH}" height="${PITCH}" patternUnits="userSpaceOnUse">` +
-    `<rect width="${CELL}" height="${CELL}" rx="2" fill="${SCREEN.cell[0]}"/></pattern>` +
-    // The cable is drawn long and cut off at the rail, so it needs no keyframes of its own.
-    `<clipPath id="belowRail"><rect x="-2000" y="${l.railY}" width="4000" height="1000"/></clipPath>` +
+    `<rect x="${(CELL - 3) / 2}" y="${(CELL - 3) / 2}" width="3" height="3" fill="${SCREEN.cell[0]}"/></pattern>` +
     `</defs>`
   );
 }
@@ -325,11 +315,10 @@ export function screenMarkup(l: Layout, seed: number): string {
     const s = rng() < 0.2 ? 2 : 1.2;
     return `<rect class="star s${i % 3}" x="${round(x)}" y="${round(y)}" width="${s}" height="${s}" fill="${SCREEN.white}"/>`;
   }).join('');
-  const groundY = l.gridTop + l.gridH + 9;
   return (
     `<rect class="glass" x="${g.x}" y="${g.y}" width="${g.w}" height="${round(g.h)}" rx="8" fill="${SCREEN.bg}" stroke="url(#trim)" stroke-width="1.5"/>` +
     `<g clip-path="url(#glassClip)">${stars}` +
-    `<rect class="ground" x="${g.x + 10}" y="${round(groundY)}" width="${round(l.box.x - 14 - g.x)}" height="2" fill="${SCREEN.phosphor}" opacity=".85"/>` +
+    `<rect class="ground" x="${g.x + 10}" y="${round(l.groundY)}" width="${g.w - 20}" height="2" fill="${SCREEN.phosphor}" opacity=".85"/>` +
     `</g>`
   );
 }
@@ -356,54 +345,9 @@ export function screenCss(l: Layout): string {
   );
 }
 
-export function railMarkup(l: Layout, p: Palette): string {
-  const x1 = l.gridLeft - 6;
-  const x2 = l.box.x + l.box.w + 6;
-  return (
-    `<rect x="${x1}" y="${l.railY - 2.5}" width="${x2 - x1}" height="5" rx="2.5" fill="url(#chrome)"/>` +
-    `<rect x="${x1 - 3}" y="${l.railY - 5}" width="6" height="10" rx="2" fill="${p.accentDark}"/>` +
-    `<rect x="${x2 - 3}" y="${l.railY - 5}" width="6" height="10" rx="2" fill="${p.accentDark}"/>`
-  );
-}
-
-/** Empty sockets under every day of the year. */
+/** Empty days: dim dots, so the formation still reads as a contribution graph. */
 export function socketsMarkup(l: Layout): string {
   return `<rect x="${l.gridLeft}" y="${round(l.gridTop)}" width="${l.gridW}" height="${l.gridH}" fill="url(#sockets)"/>`;
-}
-
-/** The acrylic prize box the commits pile up in (open at the top), lit from below. */
-export function prizeBox(l: Layout, p: Palette): string {
-  const b = l.box;
-  const bottom = b.y + b.h;
-  return (
-    `<g class="prize-box">` +
-    `<rect x="${b.x}" y="${round(b.y)}" width="${b.w}" height="${round(b.h)}" rx="4" fill="${p.accent}" opacity=".07"/>` +
-    `<rect x="${b.x + 2}" y="${round(b.y)}" width="${b.w - 4}" height="${round(b.h * 0.6)}" rx="3" fill="url(#acrylic)"/>` +
-    `<path d="M${b.x} ${round(b.y)} V${round(bottom)} H${b.x + b.w} V${round(b.y)}" fill="none" stroke="${p.accent}" stroke-width="2" stroke-linejoin="round"/>` +
-    `<rect x="${b.x - 3}" y="${round(b.y - 3)}" width="${b.w + 6}" height="4" rx="2" fill="url(#chrome)"/>` +
-    `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}" filter="url(#glow)"/>` +
-    `<rect x="${b.x + 4}" y="${round(bottom + 2)}" width="${b.w - 8}" height="2.5" rx="1.25" fill="${p.accent}"/>` +
-    pixelText(TEXT.prizes, b.x + b.w / 2, bottom + 8, { px: 1.1, fill: SCREEN.dim, anchor: 'middle' }) +
-    `</g>`
-  );
-}
-
-/** Pile slots inside the box: the largest square cells that fit every commit. */
-export function pileSlots(l: Layout, count: number): { x: number; y: number; size: number }[] {
-  const left = l.box.x + 5;
-  const bottom = l.box.y + l.box.h - 4;
-  const w = l.box.w - 10;
-  const h = l.box.h - 26; // keep the top clear for the drop
-  let pitch = 8;
-  while (pitch > 2 && Math.floor(w / pitch) * Math.floor(h / pitch) < count) pitch -= 0.5;
-  const perRow = Math.max(1, Math.floor(w / pitch));
-  const rows = Math.max(1, Math.floor(h / pitch));
-  const size = Math.max(1.5, pitch - 1);
-  return Array.from({ length: count }, (_, j) => {
-    // A huge year wraps onto the top layer rather than overflowing the box.
-    const row = Math.floor(j / perRow) % rows;
-    return { x: left + (j % perRow) * pitch + size / 2, y: bottom - row * pitch - size / 2, size };
-  });
 }
 
 /** Big centered pixel text over the play field, on a dark plate (READY!, ROUND CLEAR!). */
