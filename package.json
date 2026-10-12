@@ -6,6 +6,7 @@
   "description": "My GitHub contribution graph as a self-playing Space Invaders game, starring the ClawBox crab",
   "scripts": {
     "build:svg": "tsx src/index.ts",
+    "build:stats": "tsx src/build-stats.ts",
     "build:assets": "python3 scripts/build-brand-assets.py",
     "preview": "tsx scripts/preview.ts",
     "test": "vitest run",
