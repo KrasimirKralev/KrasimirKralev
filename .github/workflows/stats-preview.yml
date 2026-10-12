@@ -1,0 +1,52 @@
+name: Stats preview
+
+# Renders the stats card for a pull request so it can be reviewed before it
+# reaches the profile. Read-only: it uploads an artifact and pushes nothing.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stats-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Render the stats SVGs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_LOGIN: ${{ github.repository_owner }}
+          OUT_DIR: ${{ runner.temp }}/preview
+        run: |
+          npm run build:stats
+          {
+            echo '### Stats card preview'
+            echo 'Download the `stats-preview` artifact for `stats.svg` (light) and `stats-dark.svg` (dark). The numbers:'
+            echo '```json'
+            cat "$OUT_DIR/stats.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stats-preview
+          path: ${{ runner.temp }}/preview
+          if-no-files-found: error
