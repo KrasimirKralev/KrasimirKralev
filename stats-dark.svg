@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="478" height="158" viewBox="0 0 478 158" role="img" aria-labelledby="stats-title">
+<title id="stats-title">krasi@plovdiv:~$ uptime
+555 PRs merged into ClawBox · #1 of 11 contributors
+50 PRs merged across 7 OpenClaw repos
+#4 of 53 contributors in openclaw/mcporter
+#4 of 19 contributors in openclaw/lobster
+# counted from the GitHub API on 2026-10-24</title>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:14px}
+.p{fill:#d2a8ff}.c{fill:#f0f6fc}.o{fill:#79c0ff}.n{fill:#79c0ff;font-weight:700}.d{fill:#9198a1}
+</style>
+<rect width="478" height="158" rx="6" fill="#151b23"/>
+<text x="16" y="31" xml:space="preserve"><tspan class="p">krasi@plovdiv:~</tspan><tspan class="c">$ uptime</tspan></text>
+<text x="16" y="52" xml:space="preserve"><tspan class="n">555</tspan><tspan class="o"> PRs merged into ClawBox</tspan><tspan class="o"> · </tspan><tspan class="n">#1</tspan><tspan class="o"> of 11 contributors</tspan></text>
+<text x="16" y="73" xml:space="preserve"><tspan class="n">50</tspan><tspan class="o"> PRs merged across </tspan><tspan class="n">7</tspan><tspan class="o"> OpenClaw repos</tspan></text>
+<text x="16" y="94" xml:space="preserve"><tspan class="n">#4</tspan><tspan class="o"> of 53 contributors in openclaw/mcporter</tspan></text>
+<text x="16" y="115" xml:space="preserve"><tspan class="n">#4</tspan><tspan class="o"> of 19 contributors in openclaw/lobster</tspan></text>
+<text x="16" y="136" xml:space="preserve"><tspan class="d"># counted from the GitHub API on 2026-10-24</tspan></text>
+</svg>
